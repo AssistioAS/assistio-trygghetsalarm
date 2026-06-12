@@ -1,46 +1,46 @@
 {
-  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Assistio Trygghetsalarm",
-  "version": "1.0.1",
-  "identifier": "no.svein.assistio-trygghetsalarm",
-  "build": {
-    "frontendDist": "../dist",
-    "devUrl": "http://localhost:3333",
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
-  },
-  "app": {
-    "windows": [
-      {
-        "title": "Assistio Trygghetsalarm",
-        "width": 1200,
-        "height": 800,
-        "resizable": true,
-        "fullscreen": false,
-        "dragDropEnabled": false
-      }
-    ],
-    "security": {
-      "csp": null
-    }
-  },
-  "bundle": {
-    "active": true,
-    "targets": "all",
-    "createUpdaterArtifacts": true,
-    "resources": [
-      "../Trygghetsalarmer_API"
-    ],
-    "icon": [
-      "icons/icon.ico"
-    ]
-  },
-  "plugins": {
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEyQzZFQjNGOUIzMDgxNzkKUldSNWdUQ2JQK3ZHRXMyajlOSmcwb0I1elpHUzQ4a3ZiLzJlK0JMSlVMYXFJUE5iQkFiNzNRWEYK",
-      "endpoints": [
-        "https://github.com/assistioas/assistio-trygghetsalarm/releases/latest/download/latest.json"
-      ]
-    }
-  }
+    "$schema":  "../node_modules/@tauri-apps/cli/config.schema.json",
+    "productName":  "Assistio Trygghetsalarm",
+    "version":  "1.0.3",
+    "identifier":  "no.svein.assistio-trygghetsalarm",
+    "build":  {
+                  "frontendDist":  "../dist",
+                  "devUrl":  "http://localhost:3333",
+                  "beforeDevCommand":  "npm run dev",
+                  "beforeBuildCommand":  "npm run build"
+              },
+    "app":  {
+                "windows":  [
+                                {
+                                    "title":  "Assistio Trygghetsalarm",
+                                    "width":  1200,
+                                    "height":  800,
+                                    "resizable":  true,
+                                    "fullscreen":  false,
+                                    "dragDropEnabled":  false
+                                }
+                            ],
+                "security":  {
+                                 "csp":  null
+                             }
+            },
+    "bundle":  {
+                   "active":  true,
+                   "targets":  "all",
+                   "createUpdaterArtifacts":  true,
+                   "resources":  [
+                                     "../Trygghetsalarmer_API"
+                                 ],
+                   "icon":  [
+                                "icons/icon.ico"
+                            ]
+               },
+    "plugins":  {
+                    "updater":  {
+                                    "pubkey":  "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEyQzZFQjNGOUIzMDgxNzkKUldSNWdUQ2JQK3ZHRXMyajlOSmcwb0I1elpHUzQ4a3ZiLzJlK0JMSlVMYXFJUE5iQkFiNzNRWEYK",
+                                    "endpoints":  [
+                                                      "https://github.com/assistioas/assistio-trygghetsalarm/releases/latest/download/latest.json"
+                                                  ]
+                                }
+                }
 }

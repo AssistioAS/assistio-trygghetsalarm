@@ -4,19 +4,22 @@ import {
   getActiveWorkspace,
   getHeproSettings,
   saveHeproSettings,
+  getSyncInterval,
+  saveSyncInterval,
 } from "../storage/jsonStorage.js";
 
-export default function SettingsPage({ onBack }) {
+export default function SettingsPage({ onBack, onSyncIntervalChange }) {
   const [baseUrl, setBaseUrl] = useState("https://hepro.skyresponse.com");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [reportId, setReportId] = useState("9");
+  const [syncInterval, setSyncInterval] = useState("20");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null);
 
   useEffect(() => {
-    async function loadHeproSettings() {
+    async function loadAllSettings() {
       setIsLoading(true);
       try {
         const settings = await loadSettings();
@@ -26,27 +29,34 @@ export default function SettingsPage({ onBack }) {
         setUsername(hepro.username);
         setPassword(hepro.password);
         setReportId(String(hepro.reportId));
+        setSyncInterval(String(getSyncInterval(workspace)));
       } catch (error) {
         console.error("Feil ved lasting av innstillinger:", error);
       } finally {
         setIsLoading(false);
       }
     }
-    loadHeproSettings();
+    loadAllSettings();
   }, []);
 
   const handleSave = async () => {
     setIsSaving(true);
     setSaveStatus(null);
     try {
-      const success = await saveHeproSettings({
+      const heproSuccess = await saveHeproSettings({
         baseUrl: baseUrl.trim() || "https://hepro.skyresponse.com",
         username: username.trim(),
         password: password,
         reportId: parseInt(reportId, 10) || 9,
       });
-      if (success) {
+      const intervalMinutes = parseInt(syncInterval, 10) || 20;
+      const intervalSuccess = await saveSyncInterval(intervalMinutes);
+
+      if (heproSuccess && intervalSuccess) {
         setSaveStatus({ type: "success", message: "Innstillinger lagret" });
+        if (onSyncIntervalChange) {
+          onSyncIntervalChange(intervalMinutes);
+        }
       } else {
         setSaveStatus({ type: "error", message: "Kunne ikke lagre innstillinger" });
       }
@@ -158,6 +168,24 @@ export default function SettingsPage({ onBack }) {
             />
             <div className="mt-1 text-xs text-zinc-500">
               Standard rapport-ID for Hepro er 9
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-zinc-200">
+              Auto-sync intervall (minutter)
+            </label>
+            <input
+              type="number"
+              value={syncInterval}
+              onChange={(e) => setSyncInterval(e.target.value)}
+              placeholder="20"
+              min="1"
+              max="1440"
+              className="mt-2 w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/60"
+            />
+            <div className="mt-1 text-xs text-zinc-500">
+              Hvor ofte appen synkroniserer med Hepro (standard: 20 min)
             </div>
           </div>
         </div>

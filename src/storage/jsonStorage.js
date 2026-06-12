@@ -198,6 +198,42 @@ export function getHeproSettings(workspace) {
   };
 }
 
+export function getSyncInterval(workspace) {
+  return workspace?.syncIntervalMinutes ?? 20;
+}
+
+export async function saveSyncInterval(minutes) {
+  const settings = (await loadSettings()) ?? {};
+  const workspaceSettings = settings.workspaceSettings ?? {};
+  const workspaces = workspaceSettings.workspaces ?? [];
+
+  let activeId = workspaceSettings.activeWorkspaceId ?? "";
+  let targetIndex = workspaces.findIndex((w) => w.id === activeId);
+
+  if (targetIndex < 0 && workspaces.length > 0) {
+    targetIndex = 0;
+  }
+
+  if (targetIndex >= 0) {
+    workspaces[targetIndex] = {
+      ...workspaces[targetIndex],
+      syncIntervalMinutes: minutes,
+    };
+
+    const updatedSettings = {
+      ...settings,
+      workspaceSettings: {
+        ...workspaceSettings,
+        workspaces,
+      },
+    };
+
+    return await saveSettings(updatedSettings);
+  }
+
+  return false;
+}
+
 export async function saveHeproSettings(heproSettings) {
   const settings = (await loadSettings()) ?? {};
   const workspaceSettings = settings.workspaceSettings ?? {};
