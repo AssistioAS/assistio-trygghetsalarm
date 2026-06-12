@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+target/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Data files (local)
+data/
+
+# Environment & secrets
+.env
+.env.*
+*.key
+*.pem
+
+# Tauri signing keys (VIKTIG - aldri commit disse!)
+*.key
+tauri-signing-key*
+~/
+
+# Data files (brukerdata)
+safety_alarms.json
+safety_alarm_heartbeats.json
+meta.json
+
+# Claude Code
+.claude/
+
+# Notater med sensitiv info
+Github-Stuff.txt
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Downloads (brukerdata)
+Trygghetsalarmer_API/downloads/
