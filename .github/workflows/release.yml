@@ -40,3 +40,4 @@ jobs:
           releaseBody: 'Se endringer i commit-historikken.'
           releaseDraft: false
           prerelease: false
+          includeUpdaterJson: true
