@@ -26,3 +26,14 @@ tauri-plugin-fs = "2"
 tauri-plugin-store = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+
+# Hepro API sync (native Rust implementation)
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+zip = "2.1"
+quick-xml = "0.36"
+base64 = "0.22"
+sha2 = "0.10"
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "5.0"
+regex = "1.10"
+urlencoding = "2.1"

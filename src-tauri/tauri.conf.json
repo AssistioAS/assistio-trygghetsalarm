@@ -1,7 +1,7 @@
 {
     "$schema":  "../node_modules/@tauri-apps/cli/config.schema.json",
     "productName":  "Assistio Trygghetsalarm",
-    "version":  "1.0.6",
+    "version":  "1.0.7",
     "identifier":  "no.svein.assistio-trygghetsalarm",
     "build":  {
                   "frontendDist":  "../dist",
@@ -28,9 +28,6 @@
                    "active":  true,
                    "targets":  "all",
                    "createUpdaterArtifacts":  true,
-                   "resources":  [
-                                     "../Trygghetsalarmer_API"
-                                 ],
                    "icon":  [
                                 "icons/icon.ico"
                             ]
