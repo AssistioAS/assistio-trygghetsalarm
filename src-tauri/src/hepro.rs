@@ -220,12 +220,23 @@ pub fn login_and_get_token(settings: &ApiSettings) -> Result<String, String> {
         ("GrantType", "password"),
     ];
 
+    log::info!("Connecting to Skyresponse API: {}", url);
+
     let response = client
         .post(&url)
         .form(&params)
         .timeout(Duration::from_secs(60))
         .send()
-        .map_err(|e| format!("Login request failed: {}", e))?;
+        .map_err(|e| {
+            let error_msg = format!("{}", e);
+            if error_msg.contains("certificate") || error_msg.contains("ssl") || error_msg.contains("tls") {
+                format!("SSL/TLS-feil ved tilkobling til {}. Dette kan skyldes bedriftsproxy eller brannmur. Feil: {}", url, e)
+            } else if error_msg.contains("connect") || error_msg.contains("timeout") {
+                format!("Kunne ikke koble til {}. Sjekk internettforbindelse og brannmurinnstillinger. Feil: {}", url, e)
+            } else {
+                format!("Innlogging feilet: {}", e)
+            }
+        })?;
 
     if !response.status().is_success() {
         return Err(format!(
@@ -572,11 +583,18 @@ pub fn read_xlsx_row_maps(xlsx_path: &Path) -> Result<Vec<HashMap<String, String
     let shared_strings = read_shared_strings(&mut archive)?;
     let sheet_path = find_first_sheet_path(&mut archive)?;
 
-    let sheet_file = archive
-        .by_name(&sheet_path)
-        .map_err(|e| format!("Failed to read sheet {}: {}", sheet_path, e))?;
+    // Read sheet into memory first to avoid borrow issues
+    let sheet_content = {
+        let mut sheet_file = archive
+            .by_name(&sheet_path)
+            .map_err(|e| format!("Failed to read sheet {}: {}", sheet_path, e))?;
+        let mut content = Vec::new();
+        std::io::Read::read_to_end(&mut sheet_file, &mut content)
+            .map_err(|e| format!("Failed to read sheet content: {}", e))?;
+        content
+    };
 
-    let mut reader = Reader::from_reader(std::io::BufReader::new(sheet_file));
+    let mut reader = Reader::from_reader(sheet_content.as_slice());
     reader.config_mut().trim_text(true);
 
     let mut buf = Vec::new();
@@ -588,6 +606,8 @@ pub fn read_xlsx_row_maps(xlsx_path: &Path) -> Result<Vec<HashMap<String, String
     let mut in_row = false;
     let mut in_cell = false;
     let mut in_value = false;
+    let mut in_inline_str = false;  // For t="inlineStr" cells
+    let mut in_t = false;           // For <t> tags inside inline strings
 
     loop {
         match reader.read_event_into(&mut buf) {
@@ -611,10 +631,23 @@ pub fn read_xlsx_row_maps(xlsx_path: &Path) -> Result<Vec<HashMap<String, String
                     }
                 } else if name.as_ref() == b"v" && in_cell {
                     in_value = true;
+                } else if name.as_ref() == b"is" && in_cell {
+                    // Inline string container
+                    in_inline_str = true;
+                } else if name.as_ref() == b"t" && (in_inline_str || in_cell) {
+                    // Text tag (inside inline string or directly)
+                    in_t = true;
+                }
+            }
+            Ok(Event::Empty(e)) => {
+                // Handle empty/self-closing tags
+                let name = e.local_name();
+                if name.as_ref() == b"c" && in_row {
+                    // Empty cell - just skip
                 }
             }
             Ok(Event::Text(e)) => {
-                if in_value {
+                if in_value || in_t {
                     if let Ok(text) = e.unescape() {
                         current_value.push_str(&text);
                     }
@@ -624,6 +657,10 @@ pub fn read_xlsx_row_maps(xlsx_path: &Path) -> Result<Vec<HashMap<String, String
                 let name = e.local_name();
                 if name.as_ref() == b"v" {
                     in_value = false;
+                } else if name.as_ref() == b"t" {
+                    in_t = false;
+                } else if name.as_ref() == b"is" {
+                    in_inline_str = false;
                 } else if name.as_ref() == b"c" {
                     if in_cell && !current_cell_ref.is_empty() {
                         let col = extract_column_letter(&current_cell_ref);
@@ -638,6 +675,7 @@ pub fn read_xlsx_row_maps(xlsx_path: &Path) -> Result<Vec<HashMap<String, String
                                 current_value.clone()
                             }
                         } else {
+                            // Inline string or direct value
                             current_value.clone()
                         };
 
@@ -646,6 +684,8 @@ pub fn read_xlsx_row_maps(xlsx_path: &Path) -> Result<Vec<HashMap<String, String
                         }
                     }
                     in_cell = false;
+                    in_inline_str = false;
+                    in_t = false;
                 } else if name.as_ref() == b"row" {
                     if in_row {
                         rows.push(current_row.clone());
@@ -1261,9 +1301,10 @@ pub fn sync_heartbeats(settings: &ApiSettings, download_dir: &Path) -> Result<Sy
     let row_maps = read_xlsx_row_maps(&xlsx_path)?;
 
     // Find header row with heartbeat columns
-    let heartbeat_aliases = ["sistehjerteslag", "hjerteslag", "sistkommunikasjon"];
-    let identifier_aliases = ["identifier", "identifikator", "abonnement", "brukerid", "senderid"];
+    let heartbeat_keywords = ["hjerteslag", "kommunikasjon", "heartbeat", "lastseen", "lastcontact"];
+    let identifier_aliases = ["identifier", "identifikator", "abonnement"];
     let apartment_aliases = ["leilighetnummer", "leilighet", "hybel", "romnummer"];
+    let heartbeat_aliases = ["hjerteslag", "kommunikasjon", "heartbeat", "lastseen", "lastcontact", "sistekommunikasjon", "sistehjerteslag"];
 
     fn normalize_header(s: &str) -> String {
         s.trim()
@@ -1271,52 +1312,78 @@ pub fn sync_heartbeats(settings: &ApiSettings, download_dir: &Path) -> Result<Sy
             .replace('æ', "ae")
             .replace('ø', "o")
             .replace('å', "a")
+            .replace(' ', "")
             .chars()
             .filter(|c| c.is_alphanumeric())
             .collect()
     }
 
-    // Detect header row
+    // Detect header row - look for any cell containing heartbeat-related keywords
     let mut header_index = None;
 
     for (idx, row) in row_maps.iter().enumerate() {
-        let normalized: std::collections::HashSet<String> = row
+        let all_values: String = row
             .values()
             .map(|v| normalize_header(v))
-            .collect();
+            .collect::<Vec<_>>()
+            .join(" ");
 
-        if heartbeat_aliases.iter().any(|a| normalized.contains(&a.to_string())) {
+        // Check if any heartbeat keyword is contained in any cell
+        if heartbeat_keywords.iter().any(|keyword| all_values.contains(keyword)) {
             header_index = Some(idx);
+            log::info!("Found heartbeat header at row {}", idx);
             break;
         }
     }
 
-    let header_idx = header_index.ok_or("Could not find header row in heartbeat report")?;
+    // Fallback: if no header found, try first row with multiple columns
+    let header_idx = match header_index {
+        Some(idx) => idx,
+        None => {
+            log::warn!("Could not find heartbeat header row by keywords, using first row with data");
+            row_maps.iter().position(|row| row.len() >= 3).unwrap_or(0)
+        }
+    };
+
+    // Build column-to-header mapping from header row
+    let header_row = row_maps.get(header_idx).cloned().unwrap_or_default();
+    let col_to_header: HashMap<String, String> = header_row
+        .iter()
+        .map(|(col, val)| (col.clone(), val.clone()))
+        .collect();
+
+    log::info!("Heartbeat header row has {} columns", col_to_header.len());
 
     // Parse records
     let mut imported_items: Vec<HeartbeatItem> = Vec::new();
 
     for row in row_maps.iter().skip(header_idx + 1) {
-        // Find identifier
-        let mut identifier = String::new();
+        // Build a row with header names as keys
+        let mut named_row: HashMap<String, String> = HashMap::new();
         for (col, value) in row {
-            let normalized_header = normalize_header(value);
-            if identifier_aliases.iter().any(|a| normalized_header.contains(a)) {
-                continue; // Skip header-like values
+            if let Some(header) = col_to_header.get(col) {
+                named_row.insert(header.clone(), value.clone());
             }
-            // Use column A or B as identifier typically
-            if col == "A" || col == "B" {
-                let norm = normalize_alarm_identifier(value);
-                if !norm.is_empty() {
-                    identifier = norm;
+            // Also keep column letter for fallback
+            named_row.insert(col.clone(), value.clone());
+        }
+
+        // Find identifier - look for known identifier columns first
+        let mut identifier = String::new();
+        for (key, value) in &named_row {
+            let norm_key = normalize_header(key);
+            if identifier_aliases.iter().any(|a| norm_key.contains(a)) {
+                let norm_val = normalize_alarm_identifier(value);
+                if !norm_val.is_empty() {
+                    identifier = norm_val;
                     break;
                 }
             }
         }
 
-        // Alternative: look for identifier pattern in any column
+        // Fallback: look for identifier pattern in any column
         if identifier.is_empty() {
-            for value in row.values() {
+            for value in named_row.values() {
                 let norm = normalize_alarm_identifier(value);
                 if !norm.is_empty() && (norm.starts_with('+') || norm.len() >= 8) {
                     identifier = norm;
@@ -1329,43 +1396,61 @@ pub fn sync_heartbeats(settings: &ApiSettings, download_dir: &Path) -> Result<Sy
             continue;
         }
 
-        // Find apartment and heartbeat values
+        // Find apartment - look by header name
         let mut apartment = String::new();
-        let mut heartbeat = String::new();
-
-        for (_col, value) in row {
-            let norm = normalize_header(value);
-            // Skip if this looks like the identifier
-            if normalize_alarm_identifier(value) == identifier {
-                continue;
-            }
-
-            // Check if this column might be apartment
-            if apartment.is_empty() {
-                for alias in &apartment_aliases {
-                    if norm.contains(alias) {
-                        apartment = value.clone();
-                        break;
-                    }
-                }
-            }
-
-            // Check for datetime-like values (heartbeat timestamps)
-            if heartbeat.is_empty() && (value.contains('-') || value.contains('/')) && value.len() > 8 {
-                heartbeat = value.clone();
+        for (key, value) in &named_row {
+            let norm_key = normalize_header(key);
+            if apartment_aliases.iter().any(|a| norm_key.contains(a)) {
+                apartment = value.clone();
+                break;
             }
         }
 
+        // Find heartbeat timestamp - look by header name first
+        let mut heartbeat = String::new();
+        for (key, value) in &named_row {
+            let norm_key = normalize_header(key);
+            if heartbeat_aliases.iter().any(|a| norm_key.contains(a)) {
+                // This column should contain the heartbeat timestamp
+                if !value.is_empty() && value.len() > 8 {
+                    heartbeat = value.clone();
+                    break;
+                }
+            }
+        }
+
+        // Fallback: look for datetime-like values
+        if heartbeat.is_empty() {
+            for value in named_row.values() {
+                // Skip the identifier value
+                if normalize_alarm_identifier(value) == identifier {
+                    continue;
+                }
+                // Look for datetime pattern
+                if (value.contains('-') || value.contains('/')) && value.len() > 10 {
+                    heartbeat = value.clone();
+                    break;
+                }
+            }
+        }
+
+        // Store raw with header names for better readability
         imported_items.push(HeartbeatItem {
             alarm_identifier: identifier,
             apartment_label: apartment,
             last_heartbeat_at: heartbeat,
             heartbeat_source_imported_at: imported_at.clone(),
-            raw: row.clone(),
+            raw: named_row.into_iter().filter(|(k, _)| !k.chars().all(|c| c.is_ascii_uppercase())).collect(),
         });
     }
 
-    log::info!("Parsed {} heartbeat records", imported_items.len());
+    log::info!("Parsed {} heartbeat records from XLSX", imported_items.len());
+
+    // Log some sample imported identifiers for debugging
+    if !imported_items.is_empty() {
+        let samples: Vec<_> = imported_items.iter().take(3).map(|i| i.alarm_identifier.as_str()).collect();
+        log::info!("Sample imported heartbeat identifiers: {:?}", samples);
+    }
 
     // Load existing safety alarms to filter
     let safety_path = derive_data_file_path(settings);
@@ -1396,11 +1481,21 @@ pub fn sync_heartbeats(settings: &ApiSettings, download_dir: &Path) -> Result<Sy
         std::collections::HashSet::new()
     };
 
+    log::info!("Found {} active safety alarm identifiers for filtering", active_identifiers.len());
+
+    // Log some sample active identifiers for debugging
+    if !active_identifiers.is_empty() {
+        let samples: Vec<_> = active_identifiers.iter().take(3).collect();
+        log::info!("Sample active safety alarm identifiers: {:?}", samples);
+    }
+
     // Filter to active users
     let filtered_items: Vec<HeartbeatItem> = imported_items
         .into_iter()
         .filter(|item| active_identifiers.contains(&item.alarm_identifier))
         .collect();
+
+    log::info!("Filtered to {} heartbeat records (matching active alarms)", filtered_items.len());
 
     // Load and merge with existing heartbeats
     let heartbeat_path = derive_heartbeat_file_path(settings);
