@@ -211,10 +211,20 @@ const REPORT_9_COLUMNS: ColumnMap = ColumnMap {
 // ============================================================================
 
 fn build_http_client() -> Result<reqwest::blocking::Client, String> {
+    // Log proxy environment for debugging
+    if let Ok(proxy) = std::env::var("HTTPS_PROXY").or_else(|_| std::env::var("https_proxy")) {
+        log::info!("Using HTTPS_PROXY: {}", proxy);
+    }
+    if let Ok(proxy) = std::env::var("HTTP_PROXY").or_else(|_| std::env::var("http_proxy")) {
+        log::info!("Using HTTP_PROXY: {}", proxy);
+    }
+
     reqwest::blocking::Client::builder()
         .use_native_tls()
         .timeout(Duration::from_secs(120))
         .connect_timeout(Duration::from_secs(30))
+        // Use a browser-like User-Agent to avoid proxy filtering
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .build()
         .map_err(|e| format!("Kunne ikke opprette HTTP-klient: {}", e))
 }
