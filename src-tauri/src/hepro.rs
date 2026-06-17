@@ -210,8 +210,19 @@ const REPORT_9_COLUMNS: ColumnMap = ColumnMap {
 // API Client
 // ============================================================================
 
+fn build_http_client() -> Result<reqwest::blocking::Client, String> {
+    reqwest::blocking::Client::builder()
+        .use_native_tls()
+        .timeout(Duration::from_secs(120))
+        .connect_timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("Kunne ikke opprette HTTP-klient: {}", e))
+}
+
 pub fn login_and_get_token(settings: &ApiSettings) -> Result<String, String> {
-    let client = reqwest::blocking::Client::new();
+    log::info!("Logging in to Skyresponse...");
+    let client = build_http_client()?;
+
     let url = format!("{}/api/v2/token", settings.base_url.trim_end_matches('/'));
 
     let params = [
@@ -225,16 +236,23 @@ pub fn login_and_get_token(settings: &ApiSettings) -> Result<String, String> {
     let response = client
         .post(&url)
         .form(&params)
-        .timeout(Duration::from_secs(60))
         .send()
         .map_err(|e| {
-            let error_msg = format!("{}", e);
-            if error_msg.contains("certificate") || error_msg.contains("ssl") || error_msg.contains("tls") {
-                format!("SSL/TLS-feil ved tilkobling til {}. Dette kan skyldes bedriftsproxy eller brannmur. Feil: {}", url, e)
-            } else if error_msg.contains("connect") || error_msg.contains("timeout") {
-                format!("Kunne ikke koble til {}. Sjekk internettforbindelse og brannmurinnstillinger. Feil: {}", url, e)
+            let error_msg = format!("{:?}", e);
+            log::error!("Connection error details: {}", error_msg);
+
+            if error_msg.contains("certificate") || error_msg.contains("ssl") || error_msg.contains("tls") || error_msg.contains("Certificate") {
+                format!("SSL/TLS-feil: Bedriftsproxy eller brannmur blokkerer tilkoblingen. Kontakt IT-avdelingen for å åpne tilgang til hepro.skyresponse.com. Teknisk: {}", e)
+            } else if error_msg.contains("dns") || error_msg.contains("resolve") || error_msg.contains("getaddrinfo") {
+                format!("DNS-feil: Kunne ikke slå opp hepro.skyresponse.com. Sjekk nettverkstilkobling. Teknisk: {}", e)
+            } else if error_msg.contains("connect") || error_msg.contains("Connection") {
+                format!("Tilkoblingsfeil: Brannmur blokkerer kanskje utgående HTTPS. Kontakt IT for å åpne port 443 til hepro.skyresponse.com. Teknisk: {}", e)
+            } else if error_msg.contains("timeout") || error_msg.contains("Timeout") {
+                format!("Tidsavbrudd: Serveren svarer ikke. Kan skyldes treg forbindelse eller brannmur. Teknisk: {}", e)
+            } else if error_msg.contains("proxy") || error_msg.contains("Proxy") {
+                format!("Proxy-feil: Bedriftsproxy tillater ikke tilkoblingen. Kontakt IT. Teknisk: {}", e)
             } else {
-                format!("Innlogging feilet: {}", e)
+                format!("Nettverksfeil ved tilkobling til Skyresponse: {}", e)
             }
         })?;
 
@@ -254,7 +272,7 @@ pub fn login_and_get_token(settings: &ApiSettings) -> Result<String, String> {
 }
 
 pub fn generate_report_filename(token: &str, settings: &ApiSettings) -> Result<String, String> {
-    let client = reqwest::blocking::Client::new();
+    let client = build_http_client()?;
     let url = format!(
         "{}/api/v2/reports/generate",
         settings.base_url.trim_end_matches('/')
@@ -314,7 +332,7 @@ pub fn download_report_file(
     output_dir: &Path,
     settings: &ApiSettings,
 ) -> Result<PathBuf, String> {
-    let client = reqwest::blocking::Client::new();
+    let client = build_http_client()?;
     let encoded_filename = urlencoding::encode(filename.trim());
     let url = format!(
         "{}/api/v2/reports/download/{}",
