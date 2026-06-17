@@ -1,6 +1,7 @@
 mod hepro;
 
 use serde::Serialize;
+use tauri::Manager;
 
 #[derive(Serialize)]
 struct SafetyAlarmSyncResult {
@@ -31,6 +32,13 @@ fn run_safety_alarm_hepro_sync(_app: tauri::AppHandle) -> Result<SafetyAlarmSync
     })
 }
 
+#[tauri::command]
+fn get_log_path(app: tauri::AppHandle) -> Result<String, String> {
+    let log_dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
+    let log_file = log_dir.join("app.log");
+    Ok(log_file.to_string_lossy().to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -39,17 +47,17 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .invoke_handler(tauri::generate_handler![run_safety_alarm_hepro_sync])
-        .setup(|app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
-            Ok(())
-        })
+        .plugin(
+            tauri_plugin_log::Builder::default()
+                .level(log::LevelFilter::Info)
+                .target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::LogDir { file_name: Some("app.log".into()) },
+                ))
+                .max_file_size(1_000_000) // 1MB per file
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
+                .build(),
+        )
+        .invoke_handler(tauri::generate_handler![run_safety_alarm_hepro_sync, get_log_path])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
