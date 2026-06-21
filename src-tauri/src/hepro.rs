@@ -1715,25 +1715,24 @@ pub fn sync_heartbeats(settings: &ApiSettings, download_dir: &Path) -> Result<Sy
     })
 }
 
-/// Main sync function that syncs both safety alarms and heartbeats
-pub fn run_full_sync(settings_path: Option<&Path>) -> Result<SyncResult, String> {
-    let settings = load_settings(settings_path)?;
+/// Check if an error is SSL/TLS related (indicates corporate proxy/Helsenett)
+fn is_ssl_error(error: &str) -> bool {
+    let error_lower = error.to_lowercase();
+    error_lower.contains("certificate") ||
+    error_lower.contains("ssl") ||
+    error_lower.contains("tls") ||
+    error_lower.contains("handshake") ||
+    error_lower.contains("schannel") ||
+    error_lower.contains("cert")
+}
 
-    log::info!(
-        "Starting Hepro sync for workspace: {}",
-        settings.workspace_name
-    );
-
-    // Create download directory
-    let download_dir = get_default_data_dir().join("downloads");
-    fs::create_dir_all(&download_dir)
-        .map_err(|e| format!("Failed to create download dir: {}", e))?;
-
+/// Internal sync function with specific settings
+fn do_sync(settings: &ApiSettings, download_dir: &Path) -> Result<SyncResult, String> {
     // Sync safety alarms first
-    let safety_result = sync_safety_alarms(&settings, &download_dir)?;
+    let safety_result = sync_safety_alarms(settings, download_dir)?;
 
     // Then sync heartbeats
-    let heartbeat_result = sync_heartbeats(&settings, &download_dir)?;
+    let heartbeat_result = sync_heartbeats(settings, download_dir)?;
 
     Ok(SyncResult {
         success: true,
@@ -1753,4 +1752,48 @@ pub fn run_full_sync(settings_path: Option<&Path>) -> Result<SyncResult, String>
         heartbeats_updated: heartbeat_result.heartbeats_updated,
         heartbeats_total: heartbeat_result.heartbeats_total,
     })
+}
+
+/// Main sync function that syncs both safety alarms and heartbeats
+/// Automatically retries with SSL bypass if SSL errors are detected (for Helsenett/enterprise networks)
+pub fn run_full_sync(settings_path: Option<&Path>) -> Result<SyncResult, String> {
+    let mut settings = load_settings(settings_path)?;
+
+    log::info!(
+        "Starting Hepro sync for workspace: {}",
+        settings.workspace_name
+    );
+
+    // Create download directory
+    let download_dir = get_default_data_dir().join("downloads");
+    fs::create_dir_all(&download_dir)
+        .map_err(|e| format!("Failed to create download dir: {}", e))?;
+
+    // First attempt with current settings
+    match do_sync(&settings, &download_dir) {
+        Ok(result) => Ok(result),
+        Err(error) => {
+            // If SSL error and we haven't already enabled SSL bypass, retry with it
+            if is_ssl_error(&error) && !settings.proxy.accept_invalid_certs {
+                log::warn!("SSL error detected, retrying with certificate bypass (Helsenett/enterprise mode)");
+                log::warn!("Original error: {}", error);
+
+                // Enable SSL bypass and retry
+                settings.proxy.accept_invalid_certs = true;
+
+                match do_sync(&settings, &download_dir) {
+                    Ok(result) => {
+                        log::info!("Sync succeeded with SSL bypass - this appears to be a Helsenett/enterprise network");
+                        Ok(result)
+                    }
+                    Err(retry_error) => {
+                        log::error!("Sync failed even with SSL bypass: {}", retry_error);
+                        Err(retry_error)
+                    }
+                }
+            } else {
+                Err(error)
+            }
+        }
+    }
 }
