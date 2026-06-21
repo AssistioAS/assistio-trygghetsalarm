@@ -28,7 +28,9 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 
 # Hepro API sync (native Rust implementation)
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "native-tls"] }
+# native-tls: Uses Windows certificate store (supports Helsenett CA certificates)
+# native-tls-alpn: Required for HTTP/2 over TLS
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "native-tls", "native-tls-alpn"] }
 zip = "2.1"
 quick-xml = "0.36"
 base64 = "0.22"

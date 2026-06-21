@@ -30,6 +30,29 @@ const HEARTBEAT_REPORT_ID: i32 = 119;
 // Data Structures
 // ============================================================================
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ProxySettings {
+    /// Proxy URL (e.g., "http://proxy.helsenett.no:8080")
+    #[serde(default)]
+    pub url: String,
+    /// Proxy username (optional, for authenticated proxies)
+    #[serde(default)]
+    pub username: String,
+    /// Proxy password (optional, for authenticated proxies)
+    #[serde(default)]
+    pub password: String,
+    /// Use system proxy settings (Windows IE/WinHTTP settings)
+    #[serde(default = "default_true", rename = "useSystemProxy")]
+    pub use_system_proxy: bool,
+    /// Accept invalid/self-signed certificates (use with caution, for Helsenett SSL inspection)
+    #[serde(default, rename = "acceptInvalidCerts")]
+    pub accept_invalid_certs: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiSettings {
     #[serde(rename = "baseUrl")]
@@ -44,6 +67,9 @@ pub struct ApiSettings {
     pub workspace_name: String,
     #[serde(rename = "dataFilePath")]
     pub data_file_path: String,
+    /// Proxy settings for enterprise networks (Helsenett)
+    #[serde(default)]
+    pub proxy: ProxySettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -210,28 +236,64 @@ const REPORT_9_COLUMNS: ColumnMap = ColumnMap {
 // API Client
 // ============================================================================
 
-fn build_http_client() -> Result<reqwest::blocking::Client, String> {
-    // Log proxy environment for debugging
+fn build_http_client(proxy_settings: &ProxySettings) -> Result<reqwest::blocking::Client, String> {
+    // Log proxy configuration for debugging
+    log::info!("Building HTTP client with proxy settings:");
+    log::info!("  - Use system proxy: {}", proxy_settings.use_system_proxy);
+    log::info!("  - Custom proxy URL: {}", if proxy_settings.url.is_empty() { "(none)" } else { &proxy_settings.url });
+    log::info!("  - Accept invalid certs: {}", proxy_settings.accept_invalid_certs);
+
+    // Log environment proxy variables
     if let Ok(proxy) = std::env::var("HTTPS_PROXY").or_else(|_| std::env::var("https_proxy")) {
-        log::info!("Using HTTPS_PROXY: {}", proxy);
+        log::info!("  - HTTPS_PROXY env: {}", proxy);
     }
     if let Ok(proxy) = std::env::var("HTTP_PROXY").or_else(|_| std::env::var("http_proxy")) {
-        log::info!("Using HTTP_PROXY: {}", proxy);
+        log::info!("  - HTTP_PROXY env: {}", proxy);
     }
 
-    reqwest::blocking::Client::builder()
+    let mut builder = reqwest::blocking::Client::builder()
         .use_native_tls()
         .timeout(Duration::from_secs(120))
         .connect_timeout(Duration::from_secs(30))
         // Use a browser-like User-Agent to avoid proxy filtering
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+
+    // Configure proxy
+    if !proxy_settings.url.is_empty() {
+        // Use explicitly configured proxy
+        log::info!("Configuring explicit proxy: {}", proxy_settings.url);
+        let mut proxy = reqwest::Proxy::all(&proxy_settings.url)
+            .map_err(|e| format!("Ugyldig proxy-URL '{}': {}", proxy_settings.url, e))?;
+
+        // Add proxy authentication if provided
+        if !proxy_settings.username.is_empty() {
+            log::info!("Adding proxy authentication for user: {}", proxy_settings.username);
+            proxy = proxy.basic_auth(&proxy_settings.username, &proxy_settings.password);
+        }
+
+        builder = builder.proxy(proxy);
+    } else if !proxy_settings.use_system_proxy {
+        // Disable all proxies (direct connection)
+        log::info!("Disabling all proxies (direct connection)");
+        builder = builder.no_proxy();
+    }
+    // If use_system_proxy is true and no explicit proxy, reqwest will use system settings automatically
+
+    // Handle SSL certificate validation
+    // WARNING: Only enable this for enterprise networks with SSL inspection (like Helsenett)
+    if proxy_settings.accept_invalid_certs {
+        log::warn!("SSL certificate validation is DISABLED - only use this in trusted enterprise networks");
+        builder = builder.danger_accept_invalid_certs(true);
+    }
+
+    builder
         .build()
         .map_err(|e| format!("Kunne ikke opprette HTTP-klient: {}", e))
 }
 
 pub fn login_and_get_token(settings: &ApiSettings) -> Result<String, String> {
     log::info!("Logging in to Skyresponse...");
-    let client = build_http_client()?;
+    let client = build_http_client(&settings.proxy)?;
 
     let url = format!("{}/api/v2/token", settings.base_url.trim_end_matches('/'));
 
@@ -282,7 +344,7 @@ pub fn login_and_get_token(settings: &ApiSettings) -> Result<String, String> {
 }
 
 pub fn generate_report_filename(token: &str, settings: &ApiSettings) -> Result<String, String> {
-    let client = build_http_client()?;
+    let client = build_http_client(&settings.proxy)?;
     let url = format!(
         "{}/api/v2/reports/generate",
         settings.base_url.trim_end_matches('/')
@@ -342,7 +404,7 @@ pub fn download_report_file(
     output_dir: &Path,
     settings: &ApiSettings,
 ) -> Result<PathBuf, String> {
-    let client = build_http_client()?;
+    let client = build_http_client(&settings.proxy)?;
     let encoded_filename = urlencoding::encode(filename.trim());
     let url = format!(
         "{}/api/v2/reports/download/{}",
@@ -986,6 +1048,48 @@ pub fn load_settings(settings_path: Option<&Path>) -> Result<ApiSettings, String
         .get("safetyAlarmImport")
         .ok_or("No safetyAlarmImport settings")?;
 
+    // Read proxy settings (can be in safetyAlarmImport or at workspace level)
+    let proxy_config = safety_import
+        .get("proxy")
+        .or_else(|| workspace.get("proxy"));
+
+    let proxy = if let Some(p) = proxy_config {
+        ProxySettings {
+            url: p
+                .get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            username: p
+                .get("username")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            password: p
+                .get("password")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            use_system_proxy: p
+                .get("useSystemProxy")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true),
+            accept_invalid_certs: p
+                .get("acceptInvalidCerts")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+        }
+    } else {
+        ProxySettings::default()
+    };
+
+    log::info!("Loaded settings for workspace: {}",
+        workspace.get("name").and_then(|v| v.as_str()).unwrap_or("unknown"));
+    log::info!("Proxy config: url={}, useSystemProxy={}, acceptInvalidCerts={}",
+        if proxy.url.is_empty() { "(none)" } else { &proxy.url },
+        proxy.use_system_proxy,
+        proxy.accept_invalid_certs);
+
     Ok(ApiSettings {
         base_url: safety_import
             .get("baseUrl")
@@ -1022,6 +1126,7 @@ pub fn load_settings(settings_path: Option<&Path>) -> Result<ApiSettings, String
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string(),
+        proxy,
     })
 }
 

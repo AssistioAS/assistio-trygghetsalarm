@@ -198,6 +198,62 @@ export function getHeproSettings(workspace) {
   };
 }
 
+export function getProxySettings(workspace) {
+  const proxySettings = workspace?.safetyAlarmImport?.proxy ?? workspace?.proxy ?? {};
+  return {
+    url: proxySettings.url ?? "",
+    username: proxySettings.username ?? "",
+    password: proxySettings.password ?? "",
+    useSystemProxy: proxySettings.useSystemProxy ?? true,
+    acceptInvalidCerts: proxySettings.acceptInvalidCerts ?? false,
+  };
+}
+
+export async function saveProxySettings(proxySettings) {
+  const settings = (await loadSettings()) ?? {};
+  const workspaceSettings = settings.workspaceSettings ?? {};
+  const workspaces = workspaceSettings.workspaces ?? [];
+
+  let activeId = workspaceSettings.activeWorkspaceId ?? "";
+  let targetIndex = workspaces.findIndex((w) => w.id === activeId);
+
+  if (targetIndex < 0 && workspaces.length > 0) {
+    targetIndex = 0;
+    activeId = workspaces[0].id ?? "workspace-1";
+  }
+
+  if (targetIndex < 0) {
+    activeId = "workspace-1";
+    workspaces.push({
+      id: activeId,
+      name: "Standard",
+      type: "local",
+      safetyAlarmImport: { proxy: proxySettings },
+    });
+    targetIndex = 0;
+  } else {
+    const existingImport = workspaces[targetIndex].safetyAlarmImport ?? {};
+    workspaces[targetIndex] = {
+      ...workspaces[targetIndex],
+      safetyAlarmImport: {
+        ...existingImport,
+        proxy: proxySettings,
+      },
+    };
+  }
+
+  const updatedSettings = {
+    ...settings,
+    workspaceSettings: {
+      ...workspaceSettings,
+      activeWorkspaceId: activeId,
+      workspaces,
+    },
+  };
+
+  return await saveSettings(updatedSettings);
+}
+
 export function getSyncInterval(workspace) {
   return workspace?.syncIntervalMinutes ?? 20;
 }
