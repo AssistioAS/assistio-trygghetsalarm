@@ -295,6 +295,12 @@ export async function validateLicense(licenseKey) {
 
 ## Del 4: Vanlige feil og løsninger
 
+### Hepro/Skyresponse virker i Firefox, men ikke i appen
+
+Se `HEPRO_NETWORK_TROUBLESHOOTING.md`.
+
+Kortversjon: Firefox kan bruke proxy/PAC/WPAD eller sertifikater som Tauri/Rust-backenden ikke automatisk får brukt. Fra `v1.0.14` finnes `Test Hepro-tilkobling` under `Innstillinger`. Testen viser loggsti, og backend logger Windows proxyinnstillinger (`ProxyServer`, `AutoConfigURL`, `AutoDetect`).
+
 ### "updater.check not allowed"
 **Løsning:** Legg til `"updater:default"` og `"process:default"` i capabilities/default.json
 

@@ -51,7 +51,7 @@ Se releases: https://github.com/AssistioAS/assistio-trygghetsalarm/releases
 Hvis du vil gjøre det steg for steg:
 
 ```powershell
-# 1. Oppdater versjon manuelt i tauri.conf.json og package.json
+# 1. Oppdater versjon manuelt i tauri.conf.json, package.json og package-lock.json
 
 # 2. Commit, tag og push
 git add .
@@ -89,6 +89,10 @@ Bruk [Semantic Versioning](https://semver.org/):
 | Breaking change | MAJOR.0.0 | 1.1.0 → 2.0.0 |
 
 ## Feilsøking
+
+### Hepro virker i Firefox, men ikke i appen
+
+Se `HEPRO_NETWORK_TROUBLESHOOTING.md`. Fra `v1.0.14` har appen en egen `Test Hepro-tilkobling`-knapp under `Innstillinger`, viser loggsti, og logger Windows proxyinnstillinger.
 
 ### GitHub Actions feiler
 
