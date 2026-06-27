@@ -18,7 +18,10 @@ export default function SettingsPage({ onBack, onSyncIntervalChange }) {
   const [syncInterval, setSyncInterval] = useState("20");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null);
+  const [connectionStatus, setConnectionStatus] = useState(null);
+  const [logPath, setLogPath] = useState("");
 
   // Proxy settings for Helsenett/enterprise networks
   const [proxyUrl, setProxyUrl] = useState("");
@@ -63,6 +66,19 @@ export default function SettingsPage({ onBack, onSyncIntervalChange }) {
     loadAllSettings();
   }, []);
 
+  useEffect(() => {
+    async function loadLogPath() {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const path = await invoke("get_log_path");
+        setLogPath(path);
+      } catch (error) {
+        console.error("Kunne ikke hente loggsti:", error);
+      }
+    }
+    loadLogPath();
+  }, []);
+
   const handleSave = async () => {
     setIsSaving(true);
     setSaveStatus(null);
@@ -90,13 +106,50 @@ export default function SettingsPage({ onBack, onSyncIntervalChange }) {
         if (onSyncIntervalChange) {
           onSyncIntervalChange(intervalMinutes);
         }
+        return true;
       } else {
         setSaveStatus({ type: "error", message: "Kunne ikke lagre innstillinger" });
+        return false;
       }
     } catch (error) {
       setSaveStatus({ type: "error", message: `Feil: ${error.message}` });
+      return false;
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    setIsTestingConnection(true);
+    setConnectionStatus(null);
+    try {
+      const saved = await handleSave();
+      if (!saved) {
+        setConnectionStatus({
+          type: "error",
+          message: "Tilkoblingstest stoppet fordi innstillingene ikke kunne lagres.",
+        });
+        return;
+      }
+
+      const { invoke } = await import("@tauri-apps/api/core");
+      const result = await invoke("test_hepro_connection");
+      setConnectionStatus({
+        type: result.success ? "success" : "error",
+        message: result.message,
+        settingsPath: result.settings_path,
+        logPath: result.log_path,
+      });
+      if (result.log_path) {
+        setLogPath(result.log_path);
+      }
+    } catch (error) {
+      setConnectionStatus({
+        type: "error",
+        message: `Tilkobling feilet: ${error.message || error}`,
+      });
+    } finally {
+      setIsTestingConnection(false);
     }
   };
 
@@ -349,11 +402,41 @@ export default function SettingsPage({ onBack, onSyncIntervalChange }) {
           </div>
         )}
 
-        <div className="mt-6 flex justify-end">
+        {connectionStatus && (
+          <div
+            className={`mt-5 rounded-xl border p-3 text-sm ${
+              connectionStatus.type === "success"
+                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+                : "border-rose-500/40 bg-rose-500/10 text-rose-200"
+            }`}
+          >
+            <div>{connectionStatus.message}</div>
+            {connectionStatus.settingsPath ? (
+              <div className="mt-2 break-all text-xs opacity-80">
+                Settings: {connectionStatus.settingsPath}
+              </div>
+            ) : null}
+            {connectionStatus.logPath || logPath ? (
+              <div className="mt-1 break-all text-xs opacity-80">
+                Logg: {connectionStatus.logPath || logPath}
+              </div>
+            ) : null}
+          </div>
+        )}
+
+        <div className="mt-6 flex flex-wrap justify-end gap-3">
+          <button
+            type="button"
+            onClick={handleTestConnection}
+            disabled={isSaving || isTestingConnection}
+            className="rounded-xl border border-zinc-700 bg-zinc-900 px-6 py-2.5 font-semibold text-zinc-100 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isTestingConnection ? "Tester..." : "Test Hepro-tilkobling"}
+          </button>
           <button
             type="button"
             onClick={handleSave}
-            disabled={isSaving}
+            disabled={isSaving || isTestingConnection}
             className="rounded-xl bg-gradient-to-r from-amber-600 to-yellow-500 px-6 py-2.5 font-semibold text-white transition hover:from-amber-500 hover:to-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isSaving ? "Lagrer..." : "Lagre innstillinger"}
@@ -370,6 +453,11 @@ export default function SettingsPage({ onBack, onSyncIntervalChange }) {
           <p>
             Appen bruker native Windows TLS og leser sertifikater fra Windows Certificate Store.
           </p>
+          {logPath ? (
+            <p>
+              Loggfil: <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-300">{logPath}</code>
+            </p>
+          ) : null}
           <p className="text-amber-400/80">
             <strong>Helsenett:</strong> Hvis du er på Helsenett med SSL-inspeksjon, aktiver "Godta SSL-inspeksjon" under Nettverksinnstillinger.
           </p>

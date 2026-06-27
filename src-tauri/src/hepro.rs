@@ -12,6 +12,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::thread;
 use std::time::Duration;
 use zip::ZipArchive;
@@ -52,6 +53,113 @@ pub struct ProxySettings {
 fn default_true() -> bool {
     true
 }
+
+#[cfg(target_os = "windows")]
+fn read_windows_internet_setting(name: &str) -> Option<String> {
+    let output = Command::new("reg")
+        .args([
+            "query",
+            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+            "/v",
+            name,
+        ])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        if !line.contains(name) {
+            continue;
+        }
+
+        if let Some(value) = line.split_whitespace().last() {
+            return Some(value.trim().to_string());
+        }
+    }
+
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn proxy_enabled_from_windows() -> bool {
+    read_windows_internet_setting("ProxyEnable")
+        .map(|value| value.eq_ignore_ascii_case("0x1") || value == "1")
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "windows")]
+fn proxy_url_from_windows_proxy_server(proxy_server: &str) -> Option<String> {
+    let raw = proxy_server.trim();
+    if raw.is_empty() {
+        return None;
+    }
+
+    let candidate = raw
+        .split(';')
+        .find_map(|part| {
+            let part = part.trim();
+            part.strip_prefix("https=")
+                .or_else(|| part.strip_prefix("http="))
+        })
+        .unwrap_or(raw)
+        .trim();
+
+    if candidate.is_empty() || candidate.contains('=') {
+        return None;
+    }
+
+    if candidate.starts_with("http://") || candidate.starts_with("https://") {
+        Some(candidate.to_string())
+    } else {
+        Some(format!("http://{}", candidate))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn detect_windows_static_proxy_url() -> Option<String> {
+    if !proxy_enabled_from_windows() {
+        return None;
+    }
+
+    read_windows_internet_setting("ProxyServer")
+        .and_then(|proxy_server| proxy_url_from_windows_proxy_server(&proxy_server))
+}
+
+#[cfg(target_os = "windows")]
+fn log_windows_proxy_settings() {
+    let proxy_enable = read_windows_internet_setting("ProxyEnable")
+        .unwrap_or_else(|| "(not set)".to_string());
+    let proxy_server = read_windows_internet_setting("ProxyServer")
+        .unwrap_or_else(|| "(not set)".to_string());
+    let auto_config_url = read_windows_internet_setting("AutoConfigURL")
+        .unwrap_or_else(|| "(not set)".to_string());
+    let auto_detect = read_windows_internet_setting("AutoDetect")
+        .unwrap_or_else(|| "(not set)".to_string());
+
+    log::info!("Windows Internet Settings:");
+    log::info!("  - ProxyEnable: {}", proxy_enable);
+    log::info!("  - ProxyServer: {}", proxy_server);
+    log::info!("  - AutoConfigURL: {}", auto_config_url);
+    log::info!("  - AutoDetect: {}", auto_detect);
+
+    if proxy_server == "(not set)" && (auto_config_url != "(not set)" || auto_detect == "0x1") {
+        log::warn!(
+            "Windows appears to use PAC/WPAD proxy discovery. Enter the resolved proxy manually in the app if Hepro works in the browser but not here."
+        );
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn detect_windows_static_proxy_url() -> Option<String> {
+    None
+}
+
+#[cfg(not(target_os = "windows"))]
+fn log_windows_proxy_settings() {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiSettings {
@@ -242,6 +350,7 @@ fn build_http_client(proxy_settings: &ProxySettings) -> Result<reqwest::blocking
     log::info!("  - Use system proxy: {}", proxy_settings.use_system_proxy);
     log::info!("  - Custom proxy URL: {}", if proxy_settings.url.is_empty() { "(none)" } else { &proxy_settings.url });
     log::info!("  - Accept invalid certs: {}", proxy_settings.accept_invalid_certs);
+    log_windows_proxy_settings();
 
     // Log environment proxy variables
     if let Ok(proxy) = std::env::var("HTTPS_PROXY").or_else(|_| std::env::var("https_proxy")) {
@@ -272,12 +381,22 @@ fn build_http_client(proxy_settings: &ProxySettings) -> Result<reqwest::blocking
         }
 
         builder = builder.proxy(proxy);
+    } else if proxy_settings.use_system_proxy {
+        if let Some(proxy_url) = detect_windows_static_proxy_url() {
+            log::info!("Configuring detected Windows static proxy: {}", proxy_url);
+            let proxy = reqwest::Proxy::all(&proxy_url)
+                .map_err(|e| format!("Ugyldig Windows proxy-URL '{}': {}", proxy_url, e))?;
+            builder = builder.proxy(proxy);
+        } else {
+            log::info!(
+                "No static Windows proxy detected. If the browser uses PAC/WPAD, enter the proxy manually."
+            );
+        }
     } else if !proxy_settings.use_system_proxy {
         // Disable all proxies (direct connection)
         log::info!("Disabling all proxies (direct connection)");
         builder = builder.no_proxy();
     }
-    // If use_system_proxy is true and no explicit proxy, reqwest will use system settings automatically
 
     // Handle SSL certificate validation
     // WARNING: Only enable this for enterprise networks with SSL inspection (like Helsenett)

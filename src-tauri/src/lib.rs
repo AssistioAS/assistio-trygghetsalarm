@@ -16,9 +16,20 @@ struct SafetyAlarmSyncResult {
 }
 
 #[tauri::command]
-fn run_safety_alarm_hepro_sync(_app: tauri::AppHandle) -> Result<SafetyAlarmSyncResult, String> {
+fn run_safety_alarm_hepro_sync(app: tauri::AppHandle) -> Result<SafetyAlarmSyncResult, String> {
+    let settings_path = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Kunne ikke finne appdata-mappe: {}", e))?
+        .join("settings.json");
+
+    log::info!(
+        "Manual/automatic Hepro sync invoked. Settings path: {}",
+        settings_path.display()
+    );
+
     // Use native Rust implementation instead of Python scripts
-    let result = hepro::run_full_sync(None)?;
+    let result = hepro::run_full_sync(Some(&settings_path))?;
 
     Ok(SafetyAlarmSyncResult {
         success: result.success,
@@ -30,6 +41,57 @@ fn run_safety_alarm_hepro_sync(_app: tauri::AppHandle) -> Result<SafetyAlarmSync
         heartbeats_updated: result.heartbeats_updated,
         heartbeats_total: result.heartbeats_total,
     })
+}
+
+#[derive(Serialize)]
+struct HeproConnectionTestResult {
+    success: bool,
+    message: String,
+    settings_path: String,
+    log_path: String,
+}
+
+#[tauri::command]
+fn test_hepro_connection(app: tauri::AppHandle) -> Result<HeproConnectionTestResult, String> {
+    let settings_path = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Kunne ikke finne appdata-mappe: {}", e))?
+        .join("settings.json");
+    let log_path = app
+        .path()
+        .app_log_dir()
+        .map_err(|e| format!("Kunne ikke finne loggmappe: {}", e))?
+        .join("app.log");
+
+    log::info!(
+        "Hepro connection test invoked. Settings path: {}",
+        settings_path.display()
+    );
+
+    let test_result = hepro::load_settings(Some(&settings_path))
+        .and_then(|settings| hepro::login_and_get_token(&settings));
+
+    match test_result {
+        Ok(_) => {
+            log::info!("Hepro connection test succeeded");
+            Ok(HeproConnectionTestResult {
+                success: true,
+                message: "Tilkobling OK. Login-token ble hentet fra Hepro/Skyresponse.".to_string(),
+                settings_path: settings_path.to_string_lossy().to_string(),
+                log_path: log_path.to_string_lossy().to_string(),
+            })
+        }
+        Err(error) => {
+            log::error!("Hepro connection test failed: {}", error);
+            Ok(HeproConnectionTestResult {
+                success: false,
+                message: format!("Tilkobling feilet: {}", error),
+                settings_path: settings_path.to_string_lossy().to_string(),
+                log_path: log_path.to_string_lossy().to_string(),
+            })
+        }
+    }
 }
 
 #[tauri::command]
@@ -57,7 +119,11 @@ pub fn run() {
                 .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![run_safety_alarm_hepro_sync, get_log_path])
+        .invoke_handler(tauri::generate_handler![
+            run_safety_alarm_hepro_sync,
+            test_hepro_connection,
+            get_log_path
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
