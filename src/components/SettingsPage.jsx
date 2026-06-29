@@ -29,7 +29,7 @@ export default function SettingsPage({ onBack, onSyncIntervalChange }) {
   const [proxyPassword, setProxyPassword] = useState("");
   const [useSystemProxy, setUseSystemProxy] = useState(true);
   const [acceptInvalidCerts, setAcceptInvalidCerts] = useState(false);
-  const [showProxySettings, setShowProxySettings] = useState(false);
+  const [showProxySettings, setShowProxySettings] = useState(true);
 
   useEffect(() => {
     async function loadAllSettings() {
