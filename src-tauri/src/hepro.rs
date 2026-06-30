@@ -22,6 +22,9 @@ use zip::ZipArchive;
 // ============================================================================
 
 const DEFAULT_BASE_URL: &str = "https://hepro.skyresponse.com";
+const HTTP_TIMEOUT_SECONDS: u64 = 45;
+const HTTP_CONNECT_TIMEOUT_SECONDS: u64 = 12;
+const PAC_FETCH_TIMEOUT_SECONDS: u64 = 8;
 const DOWNLOAD_RETRIES: u32 = 8;
 const DOWNLOAD_RETRY_SECONDS: u64 = 2;
 const SAFETY_REPORT_ID: i32 = 9;
@@ -130,6 +133,61 @@ fn detect_windows_static_proxy_url() -> Option<String> {
 }
 
 #[cfg(target_os = "windows")]
+fn detect_windows_pac_proxy_url() -> Option<String> {
+    if !proxy_enabled_from_windows() {
+        return None;
+    }
+
+    let pac_url = read_windows_internet_setting("AutoConfigURL")?;
+    if pac_url.trim().is_empty() {
+        return None;
+    }
+
+    log::info!("Attempting to fetch Windows PAC file: {}", pac_url);
+
+    let client = reqwest::blocking::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(PAC_FETCH_TIMEOUT_SECONDS))
+        .connect_timeout(Duration::from_secs(PAC_FETCH_TIMEOUT_SECONDS))
+        .build()
+        .ok()?;
+
+    let pac = match client.get(&pac_url).send().and_then(|response| response.text()) {
+        Ok(content) => content,
+        Err(error) => {
+            log::warn!("Could not fetch PAC file '{}': {}", pac_url, error);
+            return None;
+        }
+    };
+
+    let mut candidates: Vec<String> = pac
+        .split(';')
+        .filter_map(|part| {
+            let part = part.trim();
+            let upper = part.to_uppercase();
+            if !upper.starts_with("PROXY ") {
+                return None;
+            }
+            part.split_whitespace()
+                .nth(1)
+                .map(|value| value.trim_matches('"').trim_matches('\'').to_string())
+                .filter(|value| value.contains(':') && !value.is_empty())
+        })
+        .collect();
+
+    candidates.sort();
+    candidates.dedup();
+
+    if candidates.is_empty() {
+        log::warn!("PAC file did not contain any simple PROXY host:port candidates");
+        return None;
+    }
+
+    log::info!("PAC proxy candidates: {:?}", candidates);
+    Some(format!("http://{}", candidates[0]))
+}
+
+#[cfg(target_os = "windows")]
 fn log_windows_proxy_settings() {
     let proxy_enable = read_windows_internet_setting("ProxyEnable")
         .unwrap_or_else(|| "(not set)".to_string());
@@ -155,6 +213,11 @@ fn log_windows_proxy_settings() {
 
 #[cfg(not(target_os = "windows"))]
 fn detect_windows_static_proxy_url() -> Option<String> {
+    None
+}
+
+#[cfg(not(target_os = "windows"))]
+fn detect_windows_pac_proxy_url() -> Option<String> {
     None
 }
 
@@ -362,8 +425,8 @@ fn build_http_client(proxy_settings: &ProxySettings) -> Result<reqwest::blocking
 
     let mut builder = reqwest::blocking::Client::builder()
         .use_native_tls()
-        .timeout(Duration::from_secs(120))
-        .connect_timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(HTTP_TIMEOUT_SECONDS))
+        .connect_timeout(Duration::from_secs(HTTP_CONNECT_TIMEOUT_SECONDS))
         // Use a browser-like User-Agent to avoid proxy filtering
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
 
@@ -386,6 +449,11 @@ fn build_http_client(proxy_settings: &ProxySettings) -> Result<reqwest::blocking
             log::info!("Configuring detected Windows static proxy: {}", proxy_url);
             let proxy = reqwest::Proxy::all(&proxy_url)
                 .map_err(|e| format!("Ugyldig Windows proxy-URL '{}': {}", proxy_url, e))?;
+            builder = builder.proxy(proxy);
+        } else if let Some(proxy_url) = detect_windows_pac_proxy_url() {
+            log::info!("Configuring proxy candidate from Windows PAC: {}", proxy_url);
+            let proxy = reqwest::Proxy::all(&proxy_url)
+                .map_err(|e| format!("Ugyldig PAC proxy-URL '{}': {}", proxy_url, e))?;
             builder = builder.proxy(proxy);
         } else {
             log::info!(

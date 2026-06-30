@@ -1,7 +1,14 @@
 mod hepro;
 
 use serde::Serialize;
+use std::sync::{Mutex, OnceLock};
 use tauri::Manager;
+
+static HEPRO_OPERATION_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn hepro_operation_lock() -> &'static Mutex<()> {
+    HEPRO_OPERATION_LOCK.get_or_init(|| Mutex::new(()))
+}
 
 #[derive(Serialize)]
 struct SafetyAlarmSyncResult {
@@ -17,6 +24,10 @@ struct SafetyAlarmSyncResult {
 
 #[tauri::command]
 fn run_safety_alarm_hepro_sync(app: tauri::AppHandle) -> Result<SafetyAlarmSyncResult, String> {
+    let _guard = hepro_operation_lock()
+        .try_lock()
+        .map_err(|_| "Hepro-synkronisering eller tilkoblingstest pågår allerede.".to_string())?;
+
     let settings_path = app
         .path()
         .app_data_dir()
@@ -53,6 +64,10 @@ struct HeproConnectionTestResult {
 
 #[tauri::command]
 fn test_hepro_connection(app: tauri::AppHandle) -> Result<HeproConnectionTestResult, String> {
+    let _guard = hepro_operation_lock()
+        .try_lock()
+        .map_err(|_| "Hepro-synkronisering eller tilkoblingstest pågår allerede.".to_string())?;
+
     let settings_path = app
         .path()
         .app_data_dir()
