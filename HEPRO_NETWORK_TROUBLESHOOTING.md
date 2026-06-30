@@ -2,7 +2,7 @@
 
 Denne appen henter trygghetsalarmer fra Hepro/Skyresponse via native Tauri/Rust-backend.
 
-## Status per v1.0.14
+## Status per v1.0.17
 
 Det er bekreftet at appen kan synkronisere mot Hepro pa en jobb-PC i samme kommune som ikke star bak Helsenett. Hvis Hepro apnes fint i Firefox pa en PC bak Helsenett, men appen ikke sender foresporsel eller ikke logger forventet sync, er problemet mest sannsynlig lokalt nettverksoppsett:
 
@@ -11,7 +11,15 @@ Det er bekreftet at appen kan synkronisere mot Hepro pa en jobb-PC i samme kommu
 - brannmur/policy pa aktuell maskin eller nettverkssone
 - manglende manuell proxy i appens nettverksinnstillinger
 
-## Ny diagnostikk i v1.0.14
+## Viktig: v1.0.17 fikser krasj ved oppstart
+
+I v1.0.17 ble et kritisk problem fikset der appen apnet og lukket seg umiddelbart. Arsaken var at Skyresponse API krever HTTP/2, men `http2`-funksjonen manglet i reqwest-konfigurasjonen.
+
+**Symptom:** Appen apner og lukker seg med en gang, uten feilmelding.
+
+**Losning:** Oppdater til v1.0.17 eller nyere.
+
+## Diagnostikk i v1.0.14+
 
 Ga til `Innstillinger` og bruk `Test Hepro-tilkobling`.
 
@@ -45,6 +53,7 @@ Hvis loggen viser `AutoConfigURL` eller `AutoDetect`, men ingen `ProxyServer`, b
 
 | Symptom | Sannsynlig arsak | Tiltak |
 |---|---|---|
+| Appen apner og lukker seg umiddelbart | Manglende HTTP/2-stotte (fikset i v1.0.17) | Oppdater til v1.0.17 eller nyere |
 | Firefox apner Hepro, appen feiler med connect/timeout | Firefox bruker proxy/PAC som appen ikke far automatisk | Finn faktisk proxy og legg den inn under `Manuell proxy` |
 | Feil nevner certificate/SSL/TLS/schannel | SSL-inspeksjon eller manglende rotsertifikat | Prov `Godta SSL-inspeksjon`; hvis det ikke hjelper, fa IT til a legge korrekt CA i Windows Certificate Store |
 | Logg viser `ProxyServer` | Statisk proxy finnes | Appen skal bruke denne automatisk fra v1.0.14 |
