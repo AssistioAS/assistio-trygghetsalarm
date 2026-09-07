@@ -9,6 +9,7 @@ import {
 
 const VIEWS = [
   { id: "list", label: "Liste" },
+  { id: "details", label: "Detaljer" },
   { id: "control", label: "Driftskontroll" },
 ];
 
@@ -17,7 +18,6 @@ const FILTERS = [
   { id: "offline", label: "Offline" },
   { id: "critical", label: "Kritiske" },
   { id: "red", label: "Røde" },
-  { id: "yellow", label: "Gule" },
 ];
 
 const SORT_OPTIONS = [
@@ -594,6 +594,70 @@ export default function SafetyAlarmsPage({
         </div>
 
         {view === "list" ? (
+          <div className="mt-5 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950">
+            {filteredItems.length === 0 ? (
+              <div className="border border-dashed border-zinc-700 bg-zinc-950/40 px-4 py-10 text-center text-sm text-zinc-400">
+                {isLoading ? "Laster trygghetsalarmer..." : "Ingen brukere i valgt utvalg."}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-[980px] w-full border-collapse text-left text-sm">
+                  <thead className="bg-zinc-900 text-xs uppercase tracking-wide text-zinc-400">
+                    <tr>
+                      <th className="w-12 px-3 py-3 text-right font-semibold">#</th>
+                      <th className="w-48 px-3 py-3 font-semibold">Navn</th>
+                      <th className="w-16 px-3 py-3 text-right font-semibold">Alder</th>
+                      <th className="w-56 px-3 py-3 font-semibold">Adresse</th>
+                      <th className="w-28 px-3 py-3 font-semibold">Leilighet</th>
+                      <th className="w-32 px-3 py-3 font-semibold">Telefon</th>
+                      <th className="min-w-72 px-3 py-3 font-semibold">Årsak</th>
+                      <th className="w-24 px-3 py-3 font-semibold">Kritisk</th>
+                      <th className="w-24 px-3 py-3 font-semibold">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-800">
+                    {filteredItems.map((item, index) => {
+                      const tone = statusTone(item.heartbeatStatus);
+                      return (
+                        <tr
+                          key={item.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => openDialog(item)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              openDialog(item);
+                            }
+                          }}
+                          className={`cursor-pointer transition hover:bg-zinc-800/70 ${
+                            item.critical ? "bg-yellow-300/10" : "bg-zinc-950"
+                          }`}
+                        >
+                          <td className="px-3 py-2 text-right text-zinc-400">{index + 1}</td>
+                          <td className="px-3 py-2 font-medium text-white">{item.name || "Uten navn"}</td>
+                          <td className="px-3 py-2 text-right text-zinc-200">{ageFromItem(item) || "-"}</td>
+                          <td className="max-w-56 truncate px-3 py-2 text-zinc-200">{item.address || "-"}</td>
+                          <td className="px-3 py-2 text-zinc-200">{item.apartmentLabel || "-"}</td>
+                          <td className="px-3 py-2 text-zinc-200">{item.phone || "-"}</td>
+                          <td className="max-w-80 whitespace-normal break-words px-3 py-2 text-zinc-200">
+                            {item.criticalNote || "-"}
+                          </td>
+                          <td className="px-3 py-2 text-zinc-200">{item.critical ? "Ja" : "Nei"}</td>
+                          <td className="px-3 py-2">
+                            <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${tone.chip}`}>
+                              {tone.label}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        ) : view === "details" ? (
           <div className="mt-5 space-y-3">
             {filteredItems.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-zinc-700 bg-zinc-950/40 px-4 py-10 text-center text-sm text-zinc-400">
