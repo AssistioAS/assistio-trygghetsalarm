@@ -86,14 +86,14 @@ function makeFormattedHtmlExport(items, mode = "critical_only") {
     .map(
       (item, index) => `
         <tr${item.critical ? ' class="critical"' : ""}>
-          <td>${index + 1}</td>
-          <td>${escapeHtml(item.name || "")}</td>
-          <td>${escapeHtml(ageFromItem(item))}</td>
-          <td>${escapeHtml(item.address || "")}</td>
-          <td>${escapeHtml(item.apartmentLabel || "")}</td>
-          <td>${escapeHtml(item.phone || "")}</td>
-          <td>${escapeHtml(item.criticalNote || "")}</td>
-          <td>${item.critical ? "Kritisk" : "Normal"}</td>
+          <td class="col-number">${index + 1}</td>
+          <td class="col-name">${escapeHtml(item.name || "")}</td>
+          <td class="col-age">${escapeHtml(ageFromItem(item))}</td>
+          <td class="col-address">${escapeHtml(item.address || "")}</td>
+          <td class="col-apartment">${escapeHtml(item.apartmentLabel || "")}</td>
+          <td class="col-phone">${escapeHtml(item.phone || "")}</td>
+          <td class="col-reason">${escapeHtml(item.criticalNote || "")}</td>
+          <td class="col-critical">${item.critical ? "Kritisk" : "Normal"}</td>
         </tr>`
     )
     .join("");
@@ -109,6 +109,14 @@ function makeFormattedHtmlExport(items, mode = "critical_only") {
     table { border-collapse: collapse; width: 100%; }
     th, td { border: 1px solid #cfcfcf; padding: 6px 8px; text-align: left; vertical-align: top; }
     th { background: #f3f4f6; font-weight: 700; }
+    .col-number { width: 34px; text-align: right; }
+    .col-name { width: 170px; }
+    .col-age { width: 52px; text-align: right; }
+    .col-address { width: 190px; }
+    .col-apartment { width: 86px; }
+    .col-phone { width: 110px; }
+    .col-reason { width: 330px; white-space: normal; word-break: break-word; }
+    .col-critical { width: 80px; }
     tr.critical td { background: #fef08a; }
   </style>
 </head>
@@ -119,14 +127,14 @@ function makeFormattedHtmlExport(items, mode = "critical_only") {
   <table>
     <thead>
       <tr>
-        <th>#</th>
-        <th>Navn</th>
-        <th>Alder</th>
-        <th>Adresse</th>
-        <th>Leilighet</th>
-        <th>Telefon</th>
-        <th>Årsak</th>
-        <th>Kritisk</th>
+        <th class="col-number">#</th>
+        <th class="col-name">Navn</th>
+        <th class="col-age">Alder</th>
+        <th class="col-address">Adresse</th>
+        <th class="col-apartment">Leilighet</th>
+        <th class="col-phone">Telefon</th>
+        <th class="col-reason">Årsak</th>
+        <th class="col-critical">Kritisk</th>
       </tr>
     </thead>
     <tbody>${rows}</tbody>
