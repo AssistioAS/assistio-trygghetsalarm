@@ -291,6 +291,16 @@ function cardTone(item) {
   return statusTone(item.heartbeatStatus).card;
 }
 
+function tableRowTone(item) {
+  if (item.heartbeatStatus === "red") {
+    return "bg-rose-500/15 hover:bg-rose-500/25";
+  }
+  if (item.heartbeatStatus === "yellow" || item.critical) {
+    return "bg-yellow-300/10 hover:bg-yellow-300/20";
+  }
+  return "bg-zinc-950 hover:bg-zinc-800/70";
+}
+
 export default function SafetyAlarmsPage({
   items = [],
   heartbeatItems = [],
@@ -630,9 +640,7 @@ export default function SafetyAlarmsPage({
                               openDialog(item);
                             }
                           }}
-                          className={`cursor-pointer transition hover:bg-zinc-800/70 ${
-                            item.critical ? "bg-yellow-300/10" : "bg-zinc-950"
-                          }`}
+                          className={`cursor-pointer transition ${tableRowTone(item)}`}
                         >
                           <td className="px-3 py-2 text-right text-zinc-400">{index + 1}</td>
                           <td className="px-3 py-2 font-medium text-white">{item.name || "Uten navn"}</td>
