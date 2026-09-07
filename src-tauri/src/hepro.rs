@@ -17,6 +17,12 @@ use std::thread;
 use std::time::Duration;
 use zip::ZipArchive;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 // ============================================================================
 // Configuration Constants
 // ============================================================================
@@ -59,13 +65,17 @@ fn default_true() -> bool {
 
 #[cfg(target_os = "windows")]
 fn read_windows_internet_setting(name: &str) -> Option<String> {
-    let output = Command::new("reg")
+    let mut command = Command::new("reg");
+    command
         .args([
             "query",
             r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings",
             "/v",
             name,
         ])
+        .creation_flags(CREATE_NO_WINDOW);
+
+    let output = command
         .output()
         .ok()?;
 
@@ -85,6 +95,19 @@ fn read_windows_internet_setting(name: &str) -> Option<String> {
     }
 
     None
+}
+
+fn normalize_proxy_url(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        trimmed.to_string()
+    } else {
+        format!("http://{}", trimmed)
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -433,8 +456,9 @@ fn build_http_client(proxy_settings: &ProxySettings) -> Result<reqwest::blocking
     // Configure proxy
     if !proxy_settings.url.is_empty() {
         // Use explicitly configured proxy
-        log::info!("Configuring explicit proxy: {}", proxy_settings.url);
-        let mut proxy = reqwest::Proxy::all(&proxy_settings.url)
+        let proxy_url = normalize_proxy_url(&proxy_settings.url);
+        log::info!("Configuring explicit proxy: {}", proxy_url);
+        let mut proxy = reqwest::Proxy::all(&proxy_url)
             .map_err(|e| format!("Ugyldig proxy-URL '{}': {}", proxy_settings.url, e))?;
 
         // Add proxy authentication if provided

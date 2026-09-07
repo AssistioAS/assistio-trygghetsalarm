@@ -16,13 +16,13 @@ const FILTERS = [
   { id: "all", label: "Alle aktive" },
   { id: "offline", label: "Offline" },
   { id: "critical", label: "Kritiske" },
-  { id: "red", label: "Rode" },
+  { id: "red", label: "Røde" },
   { id: "yellow", label: "Gule" },
 ];
 
 const SORT_OPTIONS = [
-  { id: "critical_alpha", label: "Kritiske forst" },
-  { id: "status", label: "Status forst" },
+  { id: "critical_alpha", label: "Kritiske først" },
+  { id: "status", label: "Status først" },
   { id: "heartbeat_oldest", label: "Eldste hjerteslag" },
 ];
 
@@ -81,7 +81,7 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
-function makeExcelHtml(items, mode = "critical_only") {
+function makeFormattedHtmlExport(items, mode = "critical_only") {
   const rows = items
     .map(
       (item, index) => `
@@ -90,8 +90,8 @@ function makeExcelHtml(items, mode = "critical_only") {
           <td>${escapeHtml(item.name || "")}</td>
           <td>${escapeHtml(ageFromItem(item))}</td>
           <td>${escapeHtml(item.address || "")}</td>
-          <td>${escapeHtml([item.postalCode, item.city].filter(Boolean).join(" "))}</td>
           <td>${escapeHtml(item.apartmentLabel || "")}</td>
+          <td>${escapeHtml(item.phone || "")}</td>
           <td>${escapeHtml(item.criticalNote || "")}</td>
           <td>${item.critical ? "Kritisk" : "Normal"}</td>
         </tr>`
@@ -109,13 +109,13 @@ function makeExcelHtml(items, mode = "critical_only") {
     table { border-collapse: collapse; width: 100%; }
     th, td { border: 1px solid #cfcfcf; padding: 6px 8px; text-align: left; vertical-align: top; }
     th { background: #f3f4f6; font-weight: 700; }
-    tr.critical td { background: #fef2f2; }
+    tr.critical td { background: #fef08a; }
   </style>
 </head>
 <body>
   <h1>${mode === "all_active" ? "Alle aktive trygghetsalarmbrukere" : "Kritiske trygghetsalarmbrukere"}</h1>
   <p>Eksportert ${escapeHtml(formatDateTime(new Date().toISOString()))}. Antall: ${items.length}</p>
-  <p>${mode === "all_active" ? "Kritiske brukere er markert med lys rod bakgrunn." : "Listen inneholder bare kritiske brukere."}</p>
+  <p>${mode === "all_active" ? "Kritiske brukere er markert med gul bakgrunn." : "Listen inneholder bare kritiske brukere."}</p>
   <table>
     <thead>
       <tr>
@@ -123,9 +123,9 @@ function makeExcelHtml(items, mode = "critical_only") {
         <th>Navn</th>
         <th>Alder</th>
         <th>Adresse</th>
-        <th>Poststed</th>
         <th>Leilighet</th>
-        <th>Arsak</th>
+        <th>Telefon</th>
+        <th>Årsak</th>
         <th>Kritisk</th>
       </tr>
     </thead>
@@ -144,14 +144,12 @@ function escapeCsvField(value) {
 }
 
 function makeCsv(items) {
-  const headers = ["#", "Navn", "Alder", "Adresse", "Postnummer", "Poststed", "Leilighet", "Telefon", "Arsak", "Kritisk"];
+  const headers = ["#", "Navn", "Alder", "Adresse", "Leilighet", "Telefon", "Årsak", "Kritisk"];
   const rows = items.map((item, index) => [
     index + 1,
     item.name || "",
     ageFromItem(item),
     item.address || "",
-    item.postalCode || "",
-    item.city || "",
     item.apartmentLabel || "",
     item.phone || "",
     item.criticalNote || "",
@@ -167,12 +165,10 @@ function makeJsonExport(items) {
     navn: item.name || "",
     alder: ageFromItem(item),
     adresse: item.address || "",
-    postnummer: item.postalCode || "",
-    poststed: item.city || "",
     leilighet: item.apartmentLabel || "",
     telefon: item.phone || "",
     kritisk: item.critical || false,
-    arsak: item.criticalNote || "",
+    årsak: item.criticalNote || "",
     sisteHjerteslag: item.lastHeartbeatAt || null,
     hjerteslagStatus: item.heartbeatStatus || "unknown",
   }));
@@ -202,6 +198,7 @@ async function isTauri() {
 
 const FILE_FORMATS = {
   excel: { name: "Excel", extensions: ["xls"], mimeType: "application/vnd.ms-excel;charset=utf-8" },
+  html: { name: "Formatert HTML", extensions: ["html"], mimeType: "text/html;charset=utf-8" },
   csv: { name: "CSV", extensions: ["csv"], mimeType: "text/csv;charset=utf-8" },
   json: { name: "JSON", extensions: ["json"], mimeType: "application/json;charset=utf-8" },
 };
@@ -231,7 +228,7 @@ function statusTone(status) {
       dot: "bg-rose-500 shadow-[0_0_16px_rgba(244,63,94,0.85)]",
       chip: "border-rose-400/40 bg-rose-500/15 text-rose-100",
       card: "border-rose-500/30 bg-rose-950/40",
-      label: "Rod",
+      label: "Rød",
     };
   }
   if (status === "yellow") {
@@ -247,7 +244,7 @@ function statusTone(status) {
       dot: "bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.7)]",
       chip: "border-emerald-400/40 bg-emerald-500/15 text-emerald-100",
       card: "border-emerald-500/20 bg-emerald-950/20",
-      label: "Gronn",
+      label: "Grønn",
     };
   }
   return {
@@ -261,7 +258,7 @@ function statusTone(status) {
 function criticalBadge(item) {
   if (!item.critical) return null;
   return (
-    <span className="rounded-full border border-rose-300/50 bg-rose-500/20 px-2.5 py-1 text-[11px] font-medium text-rose-100">
+    <span className="rounded-full border border-yellow-300/60 bg-yellow-300/20 px-2.5 py-1 text-[11px] font-medium text-yellow-100">
       Kritisk
     </span>
   );
@@ -278,7 +275,10 @@ function offlineBadge(item) {
 
 function cardTone(item) {
   if (item.critical && ["red", "yellow"].includes(item.heartbeatStatus)) {
-    return "border-rose-400/60 bg-rose-500/15 shadow-[0_0_0_1px_rgba(251,113,133,0.12)]";
+    return "border-yellow-300/70 bg-yellow-300/15 shadow-[0_0_0_1px_rgba(253,224,71,0.16)]";
+  }
+  if (item.critical) {
+    return "border-yellow-300/55 bg-yellow-300/10";
   }
   return statusTone(item.heartbeatStatus).card;
 }
@@ -426,9 +426,16 @@ export default function SafetyAlarmsPage({
       } else if (format === "json") {
         content = makeJsonExport(itemsToExport);
         extension = "json";
-      } else {
-        content = makeExcelHtml(itemsToExport, mode);
+      } else if (format === "html") {
+        content = makeFormattedHtmlExport(itemsToExport, mode);
+        extension = "html";
+      } else if (format === "excel") {
+        content = makeFormattedHtmlExport(itemsToExport, mode);
         extension = "xls";
+      } else {
+        content = makeFormattedHtmlExport(itemsToExport, mode);
+        extension = "xls";
+        format = "excel";
       }
 
       await saveFile({
@@ -447,9 +454,6 @@ export default function SafetyAlarmsPage({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="text-2xl font-semibold text-white">Trygghetsalarmer</div>
-          <div className="mt-1 text-sm text-zinc-400">
-            Pilot for heartbeat, driftsstatus og senere kartvisning.
-          </div>
           <div className="mt-2 text-xs text-zinc-500">{freshnessLabel}</div>
           {refreshStatus?.message ? (
             <div
@@ -506,7 +510,7 @@ export default function SafetyAlarmsPage({
           <div className="mt-2 text-3xl font-semibold text-white">{stats.offline}</div>
         </div>
         <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4">
-          <div className="text-xs uppercase tracking-wide text-rose-200/80">Rode</div>
+          <div className="text-xs uppercase tracking-wide text-rose-200/80">Røde</div>
           <div className="mt-2 text-3xl font-semibold text-rose-100">{stats.red}</div>
         </div>
         <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4">
@@ -568,7 +572,7 @@ export default function SafetyAlarmsPage({
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Sok etter navn, adresse, identifier eller leilighet..."
+            placeholder="Søk etter navn, adresse, identifier eller leilighet..."
             className="min-w-[220px] flex-1 rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500/60"
           />
         </div>
@@ -608,7 +612,7 @@ export default function SafetyAlarmsPage({
                           {criticalBadge(item)}
                           {offlineBadge(item)}
                         </div>
-                        <div className="mt-1 text-sm text-zinc-300">
+                        <div className="mt-1 max-w-xl truncate text-sm text-zinc-300">
                           {item.displayAddress || "Ingen adresse"}
                         </div>
                       </div>
@@ -623,6 +627,10 @@ export default function SafetyAlarmsPage({
                         <div className="mt-1">{item.apartmentLabel || "-"}</div>
                       </div>
                       <div>
+                        <div className="text-[11px] uppercase tracking-wide text-zinc-500">Telefon</div>
+                        <div className="mt-1">{item.phone || "-"}</div>
+                      </div>
+                      <div className="md:col-span-2">
                         <div className="text-[11px] uppercase tracking-wide text-zinc-500">Siste hjerteslag</div>
                         <div className="mt-1">{formatDateTime(item.lastHeartbeatAt)}</div>
                       </div>
@@ -649,7 +657,7 @@ export default function SafetyAlarmsPage({
                         <div className="mt-1">{tone.label}</div>
                       </div>
                       <div>
-                        <div className="text-[11px] uppercase tracking-wide text-zinc-500">Arsak</div>
+                        <div className="text-[11px] uppercase tracking-wide text-zinc-500">Årsak</div>
                         <div className="mt-1">{item.criticalNote || "-"}</div>
                       </div>
                     </div>
@@ -663,7 +671,7 @@ export default function SafetyAlarmsPage({
             <div className="rounded-3xl border border-zinc-800 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.12),_transparent_36%),linear-gradient(180deg,rgba(24,24,27,0.96),rgba(9,9,11,0.98))] p-5">
               <div className="text-xs uppercase tracking-[0.18em] text-zinc-500">Driftskontroll</div>
               <div className="mt-2 text-sm text-zinc-400">
-                Aggregert bygningsvisning. Kartmotor kan kobles inn senere uten a endre statusmodellen.
+                Aggregert bygningsvisning. Kartmotor kan kobles inn senere uten å endre statusmodellen.
               </div>
               <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {groupedLocations.map((location) => {
@@ -759,18 +767,18 @@ export default function SafetyAlarmsPage({
                   {ageFromItem(dialogItem) ? `, ${ageFromItem(dialogItem)}` : ""}
                 </div>
                 <div className="mt-1 text-sm text-zinc-400">
-                  {[dialogItem.address, dialogItem.postalCode, dialogItem.city].filter(Boolean).join(", ") || "Ingen adresse"}
+                  {dialogItem.address || "Ingen adresse"}
                 </div>
               </div>
               {dialogItem.critical ? (
-                <span className="rounded-full border border-rose-300/50 bg-rose-500/20 px-2.5 py-1 text-xs font-medium text-rose-100">
+                <span className="rounded-full border border-yellow-300/60 bg-yellow-300/20 px-2.5 py-1 text-xs font-medium text-yellow-100">
                   Kritisk
                 </span>
               ) : null}
             </div>
 
             <div className="mt-5 space-y-2">
-              <div className="text-sm font-medium text-zinc-200">Arsak</div>
+              <div className="text-sm font-medium text-zinc-200">Årsak</div>
               <textarea
                 rows={5}
                 value={dialogReason}
@@ -820,7 +828,7 @@ export default function SafetyAlarmsPage({
                   onClick={() => saveCriticalState(true)}
                   className="rounded-xl bg-gradient-to-r from-amber-600 to-yellow-500 px-4 py-2 font-semibold text-white transition hover:from-amber-500 hover:to-yellow-400"
                 >
-                  Lagre arsak
+                  Lagre årsak
                 </button>
               </div>
             </div>
@@ -842,6 +850,7 @@ export default function SafetyAlarmsPage({
                 {[
                   { id: "excel", label: "Excel (.xls)" },
                   { id: "csv", label: "CSV (.csv)" },
+                  { id: "html", label: "Formatert HTML (.html)" },
                   { id: "json", label: "JSON (.json)" },
                 ].map((fmt) => (
                   <button

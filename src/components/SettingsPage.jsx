@@ -153,6 +153,19 @@ export default function SettingsPage({ onBack, onSyncIntervalChange }) {
     }
   };
 
+  const applyNhnProxyPreset = () => {
+    setProxyUrl("kunde.proxy.nhn.no:8080");
+    setProxyUsername("");
+    setProxyPassword("");
+    setUseSystemProxy(false);
+    setAcceptInvalidCerts(true);
+    setShowProxySettings(true);
+    setSaveStatus({
+      type: "success",
+      message: "NHN/Helsenett-proxy er fylt inn. Trykk Lagre innstillinger eller Test Hepro-tilkobling.",
+    });
+  };
+
   if (isLoading) {
     return (
       <div className="space-y-5">
@@ -307,10 +320,18 @@ export default function SettingsPage({ onBack, onSyncIntervalChange }) {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <div className="text-sm text-amber-200">
-                    Hvis du er på Helsenett og får tilkoblingsfeil, aktiver "Godta SSL-inspeksjon" nedenfor. Dette er trygt innenfor Helsenett.
+                    Hvis du er på Helsenett og får tilkoblingsfeil, bruk NHN/Helsenett-proxyen eller aktiver "Godta SSL-inspeksjon". Dette er trygt innenfor Helsenett.
                   </div>
                 </div>
               </div>
+
+              <button
+                type="button"
+                onClick={applyNhnProxyPreset}
+                className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/15"
+              >
+                Bruk NHN/Helsenett-proxy
+              </button>
 
               <div className="flex items-center gap-3">
                 <input
@@ -353,9 +374,12 @@ export default function SettingsPage({ onBack, onSyncIntervalChange }) {
                   type="url"
                   value={proxyUrl}
                   onChange={(e) => setProxyUrl(e.target.value)}
-                  placeholder="http://proxy.helsenett.no:8080"
+                  placeholder="kunde.proxy.nhn.no:8080"
                   className="mt-2 w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/60"
                 />
+                <div className="mt-1 text-xs text-zinc-500">
+                  Eksempel for Helsenett/NHN: kunde.proxy.nhn.no:8080
+                </div>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
@@ -459,7 +483,7 @@ export default function SettingsPage({ onBack, onSyncIntervalChange }) {
             </p>
           ) : null}
           <p className="text-amber-400/80">
-            <strong>Helsenett:</strong> Hvis du er på Helsenett med SSL-inspeksjon, aktiver "Godta SSL-inspeksjon" under Nettverksinnstillinger.
+            <strong>Helsenett:</strong> Hvis du er på Helsenett, bruk "Bruk NHN/Helsenett-proxy" under Nettverksinnstillinger ved tilkoblingsfeil.
           </p>
         </div>
       </div>
