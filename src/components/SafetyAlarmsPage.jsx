@@ -299,7 +299,7 @@ function makePdfExport(items, mode = "critical_only") {
   if (pageRows.length > 0 || pages.length === 0) pages.push(pageRows);
 
   const pageStreams = pages.map((pageRows, pageIndex) => {
-    const commands = ["q", "BT /F1 15 Tf 26 561 Td"];
+    const commands = ["q", "0 0 0 rg", "BT /F1 15 Tf 26 561 Td"];
     commands.push(`(${pdfText(mode === "all_active" ? "Alle aktive trygghetsalarmbrukere" : "Kritiske trygghetsalarmbrukere")}) Tj`);
     commands.push("ET");
     commands.push("BT /F1 9 Tf 26 543 Td");
@@ -314,6 +314,7 @@ function makePdfExport(items, mode = "critical_only") {
 
     let x = margin;
     for (const column of columns) {
+      commands.push("0 0 0 rg");
       commands.push("BT /F1 8.5 Tf");
       const textX = column.align === "right" ? x + column.width - 8 - approximateTextWidth(column.label, headerSize) : column.align === "center" ? x + column.width / 2 - approximateTextWidth(column.label, headerSize) / 2 : x + 4;
       commands.push(`${textX.toFixed(1)} ${(currentY - 13).toFixed(1)} Td (${pdfText(column.label)}) Tj`);
@@ -341,6 +342,7 @@ function makePdfExport(items, mode = "critical_only") {
         const textX = column.align === "right" ? x + column.width - 6 - textWidth : column.align === "center" ? x + column.width / 2 - textWidth / 2 : x + 4;
         const startY = currentY - 14;
         lines.forEach((line, lineIndex) => {
+          commands.push("0 0 0 rg");
           commands.push(`BT /F1 ${fontSize} Tf`);
           commands.push(`${textX.toFixed(1)} ${(startY - lineIndex * lineHeight).toFixed(1)} Td (${pdfText(line)}) Tj`);
           commands.push("ET");
