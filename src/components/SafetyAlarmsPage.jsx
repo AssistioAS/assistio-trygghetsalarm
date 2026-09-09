@@ -102,6 +102,20 @@ function exportRowClass(item) {
   return "";
 }
 
+function exportGroupRank(item) {
+  if (item?.critical) return 0;
+  if (isOffline(item)) return 1;
+  return 2;
+}
+
+function sortExportItems(items) {
+  return [...items].sort((a, b) => {
+    const groupDiff = exportGroupRank(a) - exportGroupRank(b);
+    if (groupDiff !== 0) return groupDiff;
+    return String(a.name ?? "").localeCompare(String(b.name ?? ""), "nb", { sensitivity: "base" });
+  });
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -634,7 +648,7 @@ export default function SafetyAlarmsPage({
   };
 
   const exportItems = async (mode, format = "excel") => {
-    const allActiveItems = sortV2Items(activeItems, "critical_alpha");
+    const allActiveItems = sortExportItems(activeItems);
     const criticalOnlyItems = allActiveItems.filter((item) => item?.critical);
     const itemsToExport = mode === "all_active" ? allActiveItems : criticalOnlyItems;
     if (itemsToExport.length === 0) return;
