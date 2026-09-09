@@ -73,6 +73,35 @@ function ageFromItem(item) {
   return age >= 0 ? String(age) : "";
 }
 
+function formattedAddress(item) {
+  return [item?.address, item?.apartmentLabel].filter(Boolean).join(", ");
+}
+
+function formattedPhone(item) {
+  const digits = String(item?.phone ?? "").replace(/\D/g, "");
+  if (digits.length >= 8) {
+    return digits.slice(-8);
+  }
+  return String(item?.phone ?? "").trim();
+}
+
+function isOffline(item) {
+  return ["red", "yellow"].includes(item?.heartbeatStatus);
+}
+
+function exportStatus(item) {
+  const statuses = [];
+  if (isOffline(item)) statuses.push("Offline");
+  if (item?.critical) statuses.push("Kritisk");
+  return statuses.join(", ");
+}
+
+function exportRowClass(item) {
+  if (isOffline(item)) return "offline";
+  if (item?.critical) return "critical";
+  return "";
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -85,15 +114,14 @@ function makeFormattedHtmlExport(items, mode = "critical_only") {
   const rows = items
     .map(
       (item, index) => `
-        <tr${item.critical ? ' class="critical"' : ""}>
+        <tr${exportRowClass(item) ? ` class="${exportRowClass(item)}"` : ""}>
           <td class="col-number">${index + 1}</td>
           <td class="col-name">${escapeHtml(item.name || "")}</td>
           <td class="col-age">${escapeHtml(ageFromItem(item))}</td>
-          <td class="col-address">${escapeHtml(item.address || "")}</td>
-          <td class="col-apartment">${escapeHtml(item.apartmentLabel || "")}</td>
-          <td class="col-phone">${escapeHtml(item.phone || "")}</td>
+          <td class="col-address">${escapeHtml(formattedAddress(item))}</td>
+          <td class="col-phone">${escapeHtml(formattedPhone(item))}</td>
           <td class="col-reason">${escapeHtml(item.criticalNote || "")}</td>
-          <td class="col-critical">${item.critical ? "Kritisk" : "Normal"}</td>
+          <td class="col-status">${escapeHtml(exportStatus(item))}</td>
         </tr>`
     )
     .join("");
@@ -111,19 +139,19 @@ function makeFormattedHtmlExport(items, mode = "critical_only") {
     th { background: #f3f4f6; font-weight: 700; }
     .col-number { width: 34px; text-align: right; }
     .col-name { width: 170px; }
-    .col-age { width: 52px; text-align: right; }
-    .col-address { width: 190px; }
-    .col-apartment { width: 86px; }
-    .col-phone { width: 110px; }
-    .col-reason { width: 330px; white-space: normal; word-break: break-word; }
-    .col-critical { width: 80px; }
+    .col-age { width: 52px; text-align: center; }
+    .col-address { width: 300px; }
+    .col-phone { width: 80px; }
+    .col-reason { width: 165px; white-space: normal; word-break: break-word; }
+    .col-status { width: 95px; }
+    tr.offline td { background: #fee2e2; }
     tr.critical td { background: #fef08a; }
   </style>
 </head>
 <body>
   <h1>${mode === "all_active" ? "Alle aktive trygghetsalarmbrukere" : "Kritiske trygghetsalarmbrukere"}</h1>
   <p>Eksportert ${escapeHtml(formatDateTime(new Date().toISOString()))}. Antall: ${items.length}</p>
-  <p>${mode === "all_active" ? "Kritiske brukere er markert med gul bakgrunn." : "Listen inneholder bare kritiske brukere."}</p>
+  <p>${mode === "all_active" ? "Offline brukere er markert med lys rød bakgrunn. Kritiske brukere er markert med gul bakgrunn." : "Listen inneholder bare kritiske brukere."}</p>
   <table>
     <thead>
       <tr>
@@ -131,10 +159,9 @@ function makeFormattedHtmlExport(items, mode = "critical_only") {
         <th class="col-name">Navn</th>
         <th class="col-age">Alder</th>
         <th class="col-address">Adresse</th>
-        <th class="col-apartment">Leilighet</th>
         <th class="col-phone">Telefon</th>
         <th class="col-reason">Årsak</th>
-        <th class="col-critical">Kritisk</th>
+        <th class="col-status">Status</th>
       </tr>
     </thead>
     <tbody>${rows}</tbody>
@@ -152,16 +179,15 @@ function escapeCsvField(value) {
 }
 
 function makeCsv(items) {
-  const headers = ["#", "Navn", "Alder", "Adresse", "Leilighet", "Telefon", "Årsak", "Kritisk"];
+  const headers = ["#", "Navn", "Alder", "Adresse", "Telefon", "Årsak", "Status"];
   const rows = items.map((item, index) => [
     index + 1,
     item.name || "",
     ageFromItem(item),
-    item.address || "",
-    item.apartmentLabel || "",
-    item.phone || "",
+    formattedAddress(item),
+    formattedPhone(item),
     item.criticalNote || "",
-    item.critical ? "Ja" : "Nei",
+    exportStatus(item),
   ]);
   const csvRows = [headers, ...rows].map((row) => row.map(escapeCsvField).join(";"));
   return "\uFEFF" + csvRows.join("\r\n");
@@ -172,10 +198,9 @@ function makeJsonExport(items) {
     nr: index + 1,
     navn: item.name || "",
     alder: ageFromItem(item),
-    adresse: item.address || "",
-    leilighet: item.apartmentLabel || "",
-    telefon: item.phone || "",
-    kritisk: item.critical || false,
+    adresse: formattedAddress(item),
+    telefon: formattedPhone(item),
+    status: exportStatus(item),
     årsak: item.criticalNote || "",
     sisteHjerteslag: item.lastHeartbeatAt || null,
     hjerteslagStatus: item.heartbeatStatus || "unknown",
@@ -187,7 +212,175 @@ function makeJsonExport(items) {
   }, null, 2);
 }
 
-function downloadTextFile(filename, content, mimeType) {
+function pdfText(value) {
+  return String(value ?? "")
+    .replace(/[^\u0009\u000a\u000d\u0020-\u00ff]/g, "")
+    .replaceAll("\\", "\\\\")
+    .replaceAll("(", "\\(")
+    .replaceAll(")", "\\)");
+}
+
+function approximateTextWidth(text, fontSize) {
+  return String(text ?? "").length * fontSize * 0.48;
+}
+
+function wrapPdfText(value, width, fontSize) {
+  const text = String(value ?? "").trim();
+  if (!text) return [""];
+  const words = text.split(/\s+/);
+  const lines = [];
+  let line = "";
+
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (approximateTextWidth(next, fontSize) <= width || !line) {
+      line = next;
+    } else {
+      lines.push(line);
+      line = word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+function makePdfExport(items, mode = "critical_only") {
+  const pageWidth = 842;
+  const pageHeight = 595;
+  const margin = 26;
+  const titleSize = 15;
+  const fontSize = 9.5;
+  const headerSize = 8.5;
+  const lineHeight = 12;
+  const headerHeight = 20;
+  const columns = [
+    { key: "nr", label: "#", width: 28, align: "right" },
+    { key: "name", label: "Navn", width: 150 },
+    { key: "age", label: "Alder", width: 40, align: "center" },
+    { key: "address", label: "Adresse", width: 245 },
+    { key: "phone", label: "Telefon", width: 72 },
+    { key: "reason", label: "Årsak", width: 170 },
+    { key: "status", label: "Status", width: 85 },
+  ];
+  const contentWidth = columns.reduce((sum, column) => sum + column.width, 0);
+  const rows = items.map((item, index) => ({
+    nr: String(index + 1),
+    name: item.name || "",
+    age: ageFromItem(item),
+    address: formattedAddress(item),
+    phone: formattedPhone(item),
+    reason: item.criticalNote || "",
+    status: exportStatus(item),
+    critical: Boolean(item.critical),
+    offline: isOffline(item),
+  }));
+
+  const pages = [];
+  let pageRows = [];
+  let y = pageHeight - margin - 48 - headerHeight;
+
+  for (const row of rows) {
+    const wrapped = {};
+    let maxLines = 1;
+    for (const column of columns) {
+      const lines = wrapPdfText(row[column.key], column.width - 8, fontSize);
+      wrapped[column.key] = lines;
+      maxLines = Math.max(maxLines, lines.length);
+    }
+    const rowHeight = Math.max(18, maxLines * lineHeight + 8);
+    if (pageRows.length > 0 && y - rowHeight < margin) {
+      pages.push(pageRows);
+      pageRows = [];
+      y = pageHeight - margin - 48 - headerHeight;
+    }
+    pageRows.push({ row, wrapped, height: rowHeight });
+    y -= rowHeight;
+  }
+  if (pageRows.length > 0 || pages.length === 0) pages.push(pageRows);
+
+  const pageStreams = pages.map((pageRows, pageIndex) => {
+    const commands = ["q", "BT /F1 15 Tf 26 561 Td"];
+    commands.push(`(${pdfText(mode === "all_active" ? "Alle aktive trygghetsalarmbrukere" : "Kritiske trygghetsalarmbrukere")}) Tj`);
+    commands.push("ET");
+    commands.push("BT /F1 9 Tf 26 543 Td");
+    commands.push(`(${pdfText(`Eksportert ${formatDateTime(new Date().toISOString())}. Antall: ${items.length}. Side ${pageIndex + 1} av ${pages.length}`)}) Tj`);
+    commands.push("ET");
+
+    let currentY = 516;
+    commands.push("0.95 0.96 0.98 rg");
+    commands.push(`${margin} ${currentY - headerHeight} ${contentWidth} ${headerHeight} re f`);
+    commands.push("0.80 0.80 0.80 RG 0.5 w");
+    commands.push(`${margin} ${currentY - headerHeight} ${contentWidth} ${headerHeight} re S`);
+
+    let x = margin;
+    for (const column of columns) {
+      commands.push("BT /F1 8.5 Tf");
+      const textX = column.align === "right" ? x + column.width - 8 - approximateTextWidth(column.label, headerSize) : column.align === "center" ? x + column.width / 2 - approximateTextWidth(column.label, headerSize) / 2 : x + 4;
+      commands.push(`${textX.toFixed(1)} ${(currentY - 13).toFixed(1)} Td (${pdfText(column.label)}) Tj`);
+      commands.push("ET");
+      x += column.width;
+    }
+    currentY -= headerHeight;
+
+    for (const { row, wrapped, height } of pageRows) {
+      if (row.offline) {
+        commands.push("1.00 0.89 0.89 rg");
+      } else if (row.critical) {
+        commands.push("1.00 0.94 0.55 rg");
+      } else {
+        commands.push("1 1 1 rg");
+      }
+      commands.push(`${margin} ${currentY - height} ${contentWidth} ${height} re f`);
+      commands.push("0.82 0.82 0.82 RG 0.35 w");
+      commands.push(`${margin} ${currentY - height} ${contentWidth} ${height} re S`);
+
+      x = margin;
+      for (const column of columns) {
+        const lines = wrapped[column.key];
+        const textWidth = Math.max(...lines.map((line) => approximateTextWidth(line, fontSize)), 0);
+        const textX = column.align === "right" ? x + column.width - 6 - textWidth : column.align === "center" ? x + column.width / 2 - textWidth / 2 : x + 4;
+        const startY = currentY - 14;
+        lines.forEach((line, lineIndex) => {
+          commands.push(`BT /F1 ${fontSize} Tf`);
+          commands.push(`${textX.toFixed(1)} ${(startY - lineIndex * lineHeight).toFixed(1)} Td (${pdfText(line)}) Tj`);
+          commands.push("ET");
+        });
+        x += column.width;
+      }
+      currentY -= height;
+    }
+
+    commands.push("Q");
+    return commands.join("\n");
+  });
+
+  const objects = [];
+  objects.push("<< /Type /Catalog /Pages 2 0 R >>");
+  objects.push(`<< /Type /Pages /Kids [${pageStreams.map((_, index) => `${3 + index * 2} 0 R`).join(" ")}] /Count ${pageStreams.length} >>`);
+
+  pageStreams.forEach((stream, index) => {
+    const pageObjectNumber = 3 + index * 2;
+    const streamObjectNumber = pageObjectNumber + 1;
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >> >> >> /Contents ${streamObjectNumber} 0 R >>`);
+    objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+  });
+
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (let i = 1; i <= objects.length; i += 1) {
+    pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return new Uint8Array([...pdf].map((char) => char.charCodeAt(0) & 0xff));
+}
+
+function downloadFile(filename, content, mimeType) {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -206,6 +399,7 @@ async function isTauri() {
 
 const FILE_FORMATS = {
   excel: { name: "Excel", extensions: ["xls"], mimeType: "application/vnd.ms-excel;charset=utf-8" },
+  pdf: { name: "PDF", extensions: ["pdf"], mimeType: "application/pdf" },
   html: { name: "Formatert HTML", extensions: ["html"], mimeType: "text/html;charset=utf-8" },
   csv: { name: "CSV", extensions: ["csv"], mimeType: "text/csv;charset=utf-8" },
   json: { name: "JSON", extensions: ["json"], mimeType: "application/json;charset=utf-8" },
@@ -222,11 +416,15 @@ async function saveFile({ defaultName, content, format = "excel" }) {
       filters: [{ name: formatConfig.name, extensions: formatConfig.extensions }],
     });
     if (!path) return false;
-    await fs.writeTextFile(path, content, { create: true });
+    if (content instanceof Uint8Array) {
+      await fs.writeFile(path, content, { create: true });
+    } else {
+      await fs.writeTextFile(path, content, { create: true });
+    }
     return true;
   }
 
-  downloadTextFile(defaultName, content, formatConfig.mimeType);
+  downloadFile(defaultName, content, formatConfig.mimeType);
   return true;
 }
 
@@ -299,6 +497,12 @@ function tableRowTone(item) {
     return "bg-yellow-300/10 hover:bg-yellow-300/20";
   }
   return "bg-zinc-950 hover:bg-zinc-800/70";
+}
+
+function statusChipTone(item) {
+  if (isOffline(item)) return statusTone(item.heartbeatStatus).chip;
+  if (item?.critical) return "border-yellow-300/50 bg-yellow-300/15 text-yellow-100";
+  return "";
 }
 
 export default function SafetyAlarmsPage({
@@ -441,6 +645,9 @@ export default function SafetyAlarmsPage({
       if (format === "csv") {
         content = makeCsv(itemsToExport);
         extension = "csv";
+      } else if (format === "pdf") {
+        content = makePdfExport(itemsToExport, mode);
+        extension = "pdf";
       } else if (format === "json") {
         content = makeJsonExport(itemsToExport);
         extension = "json";
@@ -611,17 +818,15 @@ export default function SafetyAlarmsPage({
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="min-w-[980px] w-full border-collapse text-left text-sm">
+                <table className="min-w-[900px] w-full border-collapse text-left text-sm">
                   <thead className="bg-zinc-900 text-xs uppercase tracking-wide text-zinc-400">
                     <tr>
                       <th className="w-12 px-3 py-3 text-right font-semibold">#</th>
                       <th className="w-48 px-3 py-3 font-semibold">Navn</th>
-                      <th className="w-16 px-3 py-3 text-right font-semibold">Alder</th>
-                      <th className="w-56 px-3 py-3 font-semibold">Adresse</th>
-                      <th className="w-28 px-3 py-3 font-semibold">Leilighet</th>
-                      <th className="w-32 px-3 py-3 font-semibold">Telefon</th>
-                      <th className="min-w-72 px-3 py-3 font-semibold">Årsak</th>
-                      <th className="w-24 px-3 py-3 font-semibold">Kritisk</th>
+                      <th className="w-16 px-3 py-3 text-center font-semibold">Alder</th>
+                      <th className="w-72 px-3 py-3 font-semibold">Adresse</th>
+                      <th className="w-24 px-3 py-3 font-semibold">Telefon</th>
+                      <th className="min-w-40 px-3 py-3 font-semibold">Årsak</th>
                       <th className="w-24 px-3 py-3 font-semibold">Status</th>
                     </tr>
                   </thead>
@@ -644,18 +849,18 @@ export default function SafetyAlarmsPage({
                         >
                           <td className="px-3 py-2 text-right text-zinc-400">{index + 1}</td>
                           <td className="px-3 py-2 font-medium text-white">{item.name || "Uten navn"}</td>
-                          <td className="px-3 py-2 text-right text-zinc-200">{ageFromItem(item) || "-"}</td>
-                          <td className="max-w-56 truncate px-3 py-2 text-zinc-200">{item.address || "-"}</td>
-                          <td className="px-3 py-2 text-zinc-200">{item.apartmentLabel || "-"}</td>
-                          <td className="px-3 py-2 text-zinc-200">{item.phone || "-"}</td>
-                          <td className="max-w-80 whitespace-normal break-words px-3 py-2 text-zinc-200">
+                          <td className="px-3 py-2 text-center text-zinc-200">{ageFromItem(item) || "-"}</td>
+                          <td className="max-w-72 truncate px-3 py-2 text-zinc-200">{formattedAddress(item) || "-"}</td>
+                          <td className="px-3 py-2 text-zinc-200">{formattedPhone(item) || "-"}</td>
+                          <td className="max-w-40 whitespace-normal break-words px-3 py-2 text-zinc-200">
                             {item.criticalNote || "-"}
                           </td>
-                          <td className="px-3 py-2 text-zinc-200">{item.critical ? "Ja" : "Nei"}</td>
                           <td className="px-3 py-2">
-                            <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${tone.chip}`}>
-                              {tone.label}
-                            </span>
+                            {exportStatus(item) ? (
+                              <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${statusChipTone(item)}`}>
+                                {exportStatus(item)}
+                              </span>
+                            ) : null}
                           </td>
                         </tr>
                       );
@@ -929,6 +1134,7 @@ export default function SafetyAlarmsPage({
               <div className="mt-2 flex flex-wrap gap-2">
                 {[
                   { id: "excel", label: "Excel (.xls)" },
+                  { id: "pdf", label: "PDF (.pdf)" },
                   { id: "csv", label: "CSV (.csv)" },
                   { id: "html", label: "Formatert HTML (.html)" },
                   { id: "json", label: "JSON (.json)" },
