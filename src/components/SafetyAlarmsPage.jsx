@@ -525,6 +525,7 @@ export default function SafetyAlarmsPage({
   const [dialogReason, setDialogReason] = useState("");
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [exportFormat, setExportFormat] = useState("excel");
+  const [exportError, setExportError] = useState("");
 
   const activeItems = useMemo(() => {
     const heartbeatByIdentifier = new Map(
@@ -636,6 +637,7 @@ export default function SafetyAlarmsPage({
     const itemsToExport = mode === "all_active" ? allActiveItems : criticalOnlyItems;
     if (itemsToExport.length === 0) return;
     setIsSaving(true);
+    setExportError("");
     try {
       const dateStamp = new Date().toISOString().slice(0, 10);
       const baseFilename = mode === "all_active" ? "trygghetsalarmer_alle" : "kritiske_trygghetsalarmer";
@@ -668,9 +670,12 @@ export default function SafetyAlarmsPage({
         content,
         format,
       });
+      setShowExportDialog(false);
+    } catch (error) {
+      console.error("Feil ved eksport:", error);
+      setExportError(`Kunne ikke lagre eksport: ${error.message || error}`);
     } finally {
       setIsSaving(false);
-      setShowExportDialog(false);
     }
   };
 
@@ -697,7 +702,10 @@ export default function SafetyAlarmsPage({
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => setShowExportDialog(true)}
+            onClick={() => {
+              setExportError("");
+              setShowExportDialog(true);
+            }}
             disabled={isSaving || activeItems.length === 0}
             className="rounded-xl bg-gradient-to-r from-amber-600 to-yellow-500 px-4 py-2 font-semibold text-white transition hover:from-amber-500 hover:to-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -1154,6 +1162,12 @@ export default function SafetyAlarmsPage({
                 ))}
               </div>
             </div>
+
+            {exportError ? (
+              <div className="mt-4 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-200">
+                {exportError}
+              </div>
+            ) : null}
 
             <div className="mt-5">
               <div className="text-sm font-medium text-zinc-200">Brukere</div>
