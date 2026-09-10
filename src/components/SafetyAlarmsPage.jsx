@@ -26,6 +26,8 @@ const SORT_OPTIONS = [
   { id: "heartbeat_oldest", label: "Eldste hjerteslag" },
 ];
 
+const EXPORT_FOOTER_TEXT = "Assistio Tech AS | svein@assistio.no";
+
 function formatDateTime(value) {
   if (!value) return "-";
   const date = new Date(value);
@@ -180,6 +182,7 @@ function makeFormattedHtmlExport(items, mode = "critical_only") {
     </thead>
     <tbody>${rows}</tbody>
   </table>
+  <div style="margin-top: 16px; color: #777; font-size: 11px;">${escapeHtml(EXPORT_FOOTER_TEXT)}</div>
 </body>
 </html>`;
 }
@@ -204,7 +207,7 @@ function makeCsv(items) {
     exportStatus(item),
   ]);
   const csvRows = [headers, ...rows].map((row) => row.map(escapeCsvField).join(";"));
-  return "\uFEFF" + csvRows.join("\r\n");
+  return "\uFEFF" + [...csvRows, "", escapeCsvField(EXPORT_FOOTER_TEXT)].join("\r\n");
 }
 
 function makeJsonExport(items) {
@@ -222,6 +225,7 @@ function makeJsonExport(items) {
   return JSON.stringify({
     eksportertTidspunkt: new Date().toISOString(),
     antall: exportItems.length,
+    generertAv: EXPORT_FOOTER_TEXT,
     brukere: exportItems,
   }, null, 2);
 }
@@ -318,6 +322,10 @@ function makePdfExport(items, mode = "critical_only") {
     commands.push("ET");
     commands.push("BT /F1 9 Tf 26 543 Td");
     commands.push(`(${pdfText(`Eksportert ${formatDateTime(new Date().toISOString())}. Antall: ${items.length}. Side ${pageIndex + 1} av ${pages.length}`)}) Tj`);
+    commands.push("ET");
+    commands.push("0.45 0.45 0.45 rg");
+    commands.push("BT /F1 8 Tf 26 18 Td");
+    commands.push(`(${pdfText(EXPORT_FOOTER_TEXT)}) Tj`);
     commands.push("ET");
 
     let currentY = 516;
